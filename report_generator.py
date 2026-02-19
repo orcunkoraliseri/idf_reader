@@ -32,7 +32,6 @@ def generate_reports(
     headers = [
         "Zone",
         "Floor Area [m2]",
-        "Multiplier",
         "Occupancy [people/m2]",
         "Lighting [W/m2]",
         "Electric Equipment [W/m2]",
@@ -49,7 +48,6 @@ def generate_reports(
     key_map = {
         "Zone": "name",
         "Floor Area [m2]": "floor_area",
-        "Multiplier": "multiplier",
         "Occupancy [people/m2]": "people",
         "Lighting [W/m2]": "lights",
         "Electric Equipment [W/m2]": "electric",
@@ -227,16 +225,19 @@ def generate_html_content(
         }}
         th {{
             background: #27354d;
-            padding: 16px;
+            padding: 10px 8px;
             font-weight: 600;
             color: var(--accent);
             position: sticky;
             top: 0;
             border-bottom: 2px solid var(--border);
-            white-space: nowrap;
+            vertical-align: bottom;
+            min-width: 80px;
+            max-width: 120px;
+            line-height: 1.2;
         }}
         td {{
-            padding: 14px 16px;
+            padding: 10px 8px;
             border-bottom: 1px solid var(--border);
             color: #e2e8f0;
         }}

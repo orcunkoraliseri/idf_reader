@@ -70,6 +70,22 @@ One function per IDF object type. Each returns a dict of `{zone_name: normalised
 
 - **`generate_html(zone_data, output_path, viz_b64=None)`** — Generates a modern, responsive HTML preview with a metadata table and optional 3D visualization.
 
+#### [NEW] Table Deduplication Logic
+
+Many ASHRAE prototype buildings contain multiple identical thermal zones (e.g. 30 identical classroom zones across floors and pods). Repeating their rows adds no analytical value when all internal-load values are the same.
+
+**Rules:**
+
+1. **Zone-name prefix grouping:** Zones are considered *duplicates* if they share the same **base name**. The script aggressively strips indices (`_FLR_1`, `_ZN_2`, etc.) and elevation suffixes (`_top`, `_mid`, `_bot`, `_bottom`) to capture vertical zone stacks common in prototype buildings.
+
+2. **Deduplication condition:** Within a group sharing the same base name, if **all internal load columns are identical** (occupancy, lighting, equipment, infiltration, ventilation, setpoints), only the **first representative row** is kept and a `Count` column records how many identical copies were collapsed. **Nota Bene:** Floor area is explicitly excluded from this comparison; zones with different areas but identical loads will be collapsed.
+
+3. **Variation preserved:** If **any** column value differs beyond a small float tolerance (1e-3) within the group — even by a single field (e.g. one floor has a different equipment load) — **every distinct variant in the group is preserved** with its own `Count`.
+
+4. **Column ordering:** The `Count` column appears immediately after the `Zone` column.
+
+5. **Scope:** Deduplication applies to all three output formats (CSV, Markdown, HTML).
+
 ---
 
 ### 3D Geometry Visualizer (`examples/visualizer.py` → `visualizer_adapter.py`)
@@ -105,3 +121,6 @@ Run the script against a known IDF:
 2. Verify all output files (.csv, .md, .html) are created in the `outputs/` directory.
 3. Confirm the HTML report contains an embedded `<img>` tag with the 3D model visualization.
 4. Verify graceful fallback if `eppy` is missing.
+5. **Deduplication check (SchoolSecondary IDF):** Run against `ASHRAE901_SchoolSecondary_STD2022_Denver.idf`. Confirm that:
+   - Classroom zones with identical loads (e.g. all `Mult_Class_1_Pod_*_FLR_*`) are collapsed into a single row with `Count > 1`.
+   - Mechanical zones with differing loads (e.g. `Mech_ZN_1_FLR_1` vs `Mech_ZN_1_FLR_2`) are **not** collapsed and both appear as individual rows with `Count = 1`.

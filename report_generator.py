@@ -65,9 +65,13 @@ def generate_reports(
     import re
 
     def get_base_name(name: str) -> str:
-        # Regex to strip common EnergyPlus prototype suffixes like _FLR_1, _Pod_2, _ZN_1, _1, etc.
-        # We look for underscores followed by typical keywords and digits at the end.
-        return re.sub(r"(_FLR|_Pod|_ZN|_\d)+\d*$", "", name.strip())
+        # 1. Strip typical pod/floor/zone indices
+        base = re.sub(r"(_FLR|_Pod|_ZN|_\d)+\d*$", "", name.strip())
+        # 2. Aggressively strip elevation keywords common in prototype buildings
+        # (top, mid, bot, bottom) as users often want vertical zone stacks collapsed.
+        base = re.sub(r"(_top|_mid|_bot|_bottom|_top floor|_mid floor|_bottom floor)$", "", base, flags=re.IGNORECASE)
+        # 3. Strip any remaining trailing underscores or whitespaces
+        return base.rstrip("_ ").strip()
 
     # Build groups of zones that share a base name
     groups: dict[str, list[dict]] = {}
@@ -84,47 +88,50 @@ def generate_reports(
             final_rows.append(row)
             continue
 
-        # Check if all data values (except zone name) are identical across the group
-        # This preserves variations (e.g. Mech rooms with different loads) as separate rows.
+        # Check if internal values match across the group.
+        # EXCLUSION: Floor area is ignored for deduplication as per user request.
         unique_variants: list[tuple[dict, int]] = []  # [(data_dict, count)]
 
         for zone in group:
-            # We must use the internal keys (the values of key_map) to look into the zone dict
             internal_data_keys = [key_map[h] for h in data_headers]
-            data_fingerprint = {k: zone.get(k, 0) for k in internal_data_keys}
+            # Keys used for comparison (excluding floor_area)
+            comparison_keys = [k for k in internal_data_keys if k != "floor_area"]
             
             # Find matching existing variant
             found = False
             for idx, (variant, count) in enumerate(unique_variants):
                 match = True
-                for k in internal_data_keys:
+                for k in comparison_keys:
                     v1 = variant.get(k, 0)
-                    v2 = data_fingerprint.get(k, 0)
+                    v2 = zone.get(k, 0)
                     
-                    # Numeric comparison with tolerance
+                    # Numeric comparison with larger tolerance (1e-3) for prototype rounding
                     if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
-                        if abs(v1 - v2) > 1e-6:
+                        if abs(v1 - v2) > 1e-3:
                             match = False
                             break
-                    else:
-                        # String or None comparison
-                        if v1 != v2:
-                            match = False
-                            break
+                    elif v1 != v2:
+                        match = False
+                        break
                 
                 if match:
+                    # Check if floor area (or other loads) differs within this cluster
+                    if abs(variant["floor_area"] - zone["floor_area"]) > 1e-3:
+                        variant["floor_area_varies"] = True
+                    
                     unique_variants[idx] = (variant, count + 1)
                     found = True
                     break
             
             if not found:
                 row_copy = zone.copy()
+                row_copy["floor_area_varies"] = False
                 unique_variants.append((row_copy, 1))
 
         # If a group resulted in only ONE variant, we use the base name for the row
         if len(unique_variants) == 1:
             row, count = unique_variants[0]
-            row["name"] = base_name  # Use the simplified base name (e.g. "Classroom")
+            row["name"] = base_name
             row["Count"] = count
             final_rows.append(row)
         else:

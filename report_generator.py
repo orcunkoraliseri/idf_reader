@@ -11,6 +11,25 @@ import csv
 import datetime
 
 
+def _format_val(val: any) -> str:
+    """Intelligently format a value: round to 4 decimals and strip trailing zeros.
+
+    Args:
+        val: The value to format (int, float, or other).
+
+    Returns:
+        A cleaned string representation.
+    """
+    if not isinstance(val, (int, float)):
+        return str(val)
+
+    # Use 4 decimals max, then strip trailing zeros and potential trailing dot
+    s = f"{val:.4f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s if s else "0"
+
+
 def generate_reports(
     zone_data: list[dict], output_base_path: str, viz_b64: str | None = None
 ):
@@ -126,20 +145,21 @@ def generate_reports(
         for zone in final_rows:
             row = {"Zone": zone["name"], "Count": zone["Count"]}
             for h in data_headers:
-                row[h] = zone.get(key_map[h], 0)
+                row[h] = _format_val(zone.get(key_map[h], 0))
             writer.writerow(row)
 
     # 6. Generate Markdown
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("# Zone Metadata Summary Report\n\n")
-        f.write(f"**Generated on:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(
+            f"**Generated on:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
         f.write("| " + " | ".join(headers) + " |\n")
         f.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
         for zone in final_rows:
             row_vals = [zone["name"], str(zone["Count"])]
             for h in data_headers:
-                val = zone.get(key_map[h], 0)
-                row_vals.append(f"{val:.4f}" if isinstance(val, float) else str(val))
+                row_vals.append(_format_val(zone.get(key_map[h], 0)))
             f.write("| " + " | ".join(row_vals) + " |\n")
 
     # 7. Generate HTML
@@ -182,7 +202,7 @@ def generate_html_content(
         cells_html = ""
         for h in headers:
             val = zone.get(key_map[h], 0)
-            formatted_val = f"{val:.4f}" if isinstance(val, float) else str(val)
+            formatted_val = _format_val(val)
             cells_html += f"<td>{formatted_val}</td>"
         rows_html += f"<tr>{cells_html}</tr>"
 

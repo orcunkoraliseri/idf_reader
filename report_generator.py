@@ -14,7 +14,7 @@ import datetime
 def generate_reports(
     zone_data: list[dict], output_base_path: str, viz_b64: str | None = None
 ):
-    """Generates CSV, Markdown, and HTML reports.
+    """Generates CSV, Markdown, and HTML reports with zone deduplication.
 
     Args:
         zone_data: A list of dictionaries, each containing metadata for a zone.
@@ -25,26 +25,7 @@ def generate_reports(
         print("No zone data to report.")
         return
 
-    csv_path = f"{output_base_path}.csv"
-    md_path = f"{output_base_path}.md"
-
-    # Define headers
-    headers = [
-        "Zone",
-        "Floor Area [m2]",
-        "Occupancy [people/m2]",
-        "Lighting [W/m2]",
-        "Electric Equipment [W/m2]",
-        "Gas Equipment [W/m2]",
-        "SHW [L/h.m2]",
-        "Infiltration [m3/s.m2 facade]",
-        "Ventilation [m3/s.person]",
-        "Ventilation [m3/s.m2]",
-        "Htg Setpoint [C]",
-        "Clg Setpoint [C]",
-    ]
-
-    # Map internal keys to headers
+    # 1. Define internal key map and display headers
     key_map = {
         "Zone": "name",
         "Floor Area [m2]": "floor_area",
@@ -59,41 +40,116 @@ def generate_reports(
         "Htg Setpoint [C]": "htg_sp",
         "Clg Setpoint [C]": "clg_sp",
     }
+    data_headers = list(key_map.keys())[1:]  # Everything except "Zone"
 
-    # 1. Generate CSV
+    # 2. Extract deduplication groupings
+    import re
+
+    def get_base_name(name: str) -> str:
+        # Regex to strip common EnergyPlus prototype suffixes like _FLR_1, _Pod_2, _ZN_1, _1, etc.
+        # We look for underscores followed by typical keywords and digits at the end.
+        return re.sub(r"(_FLR|_Pod|_ZN|_\d)+\d*$", "", name.strip())
+
+    # Build groups of zones that share a base name
+    groups: dict[str, list[dict]] = {}
+    for zone in zone_data:
+        base = get_base_name(zone["name"])
+        groups.setdefault(base, []).append(zone)
+
+    # 3. Process groups to collapse identical rows
+    final_rows: list[dict] = []
+    for base_name, group in groups.items():
+        if len(group) == 1:
+            row = group[0].copy()
+            row["Count"] = 1
+            final_rows.append(row)
+            continue
+
+        # Check if all data values (except zone name) are identical across the group
+        # This preserves variations (e.g. Mech rooms with different loads) as separate rows.
+        unique_variants: list[tuple[dict, int]] = []  # [(data_dict, count)]
+
+        for zone in group:
+            # We must use the internal keys (the values of key_map) to look into the zone dict
+            internal_data_keys = [key_map[h] for h in data_headers]
+            data_fingerprint = {k: zone.get(k, 0) for k in internal_data_keys}
+            
+            # Find matching existing variant
+            found = False
+            for idx, (variant, count) in enumerate(unique_variants):
+                match = True
+                for k in internal_data_keys:
+                    v1 = variant.get(k, 0)
+                    v2 = data_fingerprint.get(k, 0)
+                    
+                    # Numeric comparison with tolerance
+                    if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
+                        if abs(v1 - v2) > 1e-6:
+                            match = False
+                            break
+                    else:
+                        # String or None comparison
+                        if v1 != v2:
+                            match = False
+                            break
+                
+                if match:
+                    unique_variants[idx] = (variant, count + 1)
+                    found = True
+                    break
+            
+            if not found:
+                row_copy = zone.copy()
+                unique_variants.append((row_copy, 1))
+
+        # If a group resulted in only ONE variant, we use the base name for the row
+        if len(unique_variants) == 1:
+            row, count = unique_variants[0]
+            row["name"] = base_name  # Use the simplified base name (e.g. "Classroom")
+            row["Count"] = count
+            final_rows.append(row)
+        else:
+            # Variations detected; keep individual zone names and report separately
+            for row, count in unique_variants:
+                row["Count"] = 1
+                final_rows.append(row)
+
+    # 4. Final output setup
+    headers = ["Zone", "Count"] + data_headers
+    csv_path = f"{output_base_path}.csv"
+    md_path = f"{output_base_path}.md"
+
+    # 5. Generate CSV
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
-        for zone in zone_data:
-            row = {h: zone.get(key_map[h], 0) for h in headers}
+        for zone in final_rows:
+            row = {"Zone": zone["name"], "Count": zone["Count"]}
+            for h in data_headers:
+                row[h] = zone.get(key_map[h], 0)
             writer.writerow(row)
 
-    # 2. Generate Markdown
+    # 6. Generate Markdown
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("# Zone Metadata Summary Report\n\n")
-        f.write(
-            f"**Generated on:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
-
-        # Write table header
+        f.write(f"**Generated on:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         f.write("| " + " | ".join(headers) + " |\n")
         f.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
-
-        # Write table rows
-        for zone in zone_data:
-            row_vals = []
-            for h in headers:
+        for zone in final_rows:
+            row_vals = [zone["name"], str(zone["Count"])]
+            for h in data_headers:
                 val = zone.get(key_map[h], 0)
-                if isinstance(val, float):
-                    row_vals.append(f"{val:.4f}")
-                else:
-                    row_vals.append(str(val))
+                row_vals.append(f"{val:.4f}" if isinstance(val, float) else str(val))
             f.write("| " + " | ".join(row_vals) + " |\n")
 
-    # 3. Generate HTML
+    # 7. Generate HTML
     html_path = f"{output_base_path}.html"
     with open(html_path, "w", encoding="utf-8") as f:
-        f.write(generate_html_content(zone_data, headers, key_map, viz_b64))
+        # Re-build key_map for HTML (adding Count)
+        html_key_map = {"Zone": "name", "Count": "Count"}
+        for h in data_headers:
+            html_key_map[h] = key_map[h]
+        f.write(generate_html_content(final_rows, headers, html_key_map, viz_b64))
 
     print(f"Reports generated:\n  - {csv_path}\n  - {md_path}\n  - {html_path}")
 
@@ -240,6 +296,12 @@ def generate_html_content(
             padding: 10px 8px;
             border-bottom: 1px solid var(--border);
             color: #e2e8f0;
+        }}
+        /* Specific scaling for the Count column */
+        th:nth-child(2), td:nth-child(2) {{
+            min-width: 40px !important;
+            max-width: 60px !important;
+            text-align: center;
         }}
         tr:hover td {{
             background: rgba(99, 102, 241, 0.05);

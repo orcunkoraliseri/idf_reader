@@ -466,6 +466,16 @@ def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dic
                 template = "FCUwithDOASAbridged"
             elif "IDEALLOADSAIRSYSTEM" in eq_typ:
                 template = "IdealLoads"
+            elif "UNITHEATER" in eq_typ:
+                template = "UnitHeater"
+            elif "HIGHTEMPERATURERADIANT" in eq_typ:
+                template = "Radiant"
+            elif "LOWTEMPERATURERADIANT" in eq_typ:
+                template = "Radiant"
+            elif "BASEBOARD" in eq_typ:
+                template = "Baseboard"
+            elif "DEHUMIDIFIER" in eq_typ:
+                template = "Dehumidifier"
             elif "AIRDISTRIBUTIONUNIT" in eq_typ:
                 # Find the ATU
                 for adu in idf_data.get("ZONEHVAC:AIRDISTRIBUTIONUNIT", []):

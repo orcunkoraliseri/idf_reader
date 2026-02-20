@@ -8,10 +8,8 @@ env/
 .env
 
 # Data and Outputs
-outputs/*.csv
-outputs/*.md
-outputs/*.html
-outputs/*.png
+# outputs/ are now included as per user request
+
 
 # OS files
 .DS_Store

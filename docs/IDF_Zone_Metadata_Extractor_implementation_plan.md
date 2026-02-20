@@ -1,8 +1,8 @@
 # IDF Zone Metadata Extractor — Implementation Plan
 
-Parse any EnergyPlus `.idf` file, extract zone-level metadata, normalize all values to the specified units, then export a **CSV**, a **Markdown**, and an **HTML** summary report.
+Parse any EnergyPlus `.idf` file, extract zone-level metadata, normalize all values to the specified units, then export a polished **HTML** summary report.
 
-**N.B.** All target `.idf` files are located under: `/Users/orcunkoraliseri/Desktop/idf_reader/ASHRAE901_STD2022`
+**N.B.** All target `.idf` files are located under: `/Users/orcunkoraliseri/Desktop/idf_reader/Content/ASHRAE901_STD2022`
 
 ## User Review Required
 
@@ -121,6 +121,6 @@ Run the script against a known IDF:
 2. Verify all output files (.csv, .md, .html) are created in the `outputs/` directory.
 3. Confirm the HTML report contains an embedded `<img>` tag with the 3D model visualization.
 4. Verify graceful fallback if `eppy` is missing.
-5. **Deduplication check (SchoolSecondary IDF):** Run against `ASHRAE901_SchoolSecondary_STD2022_Denver.idf`. Confirm that:
+5. **Deduplication check (SchoolSecondary IDF):** Run against `Content/ASHRAE901_STD2022/ASHRAE901_SchoolSecondary_STD2022_Denver.idf`. Confirm that:
    - Classroom zones with identical loads (e.g. all `Mult_Class_1_Pod_*_FLR_*`) are collapsed into a single row with `Count > 1`.
    - Mechanical zones with differing loads (e.g. `Mech_ZN_1_FLR_1` vs `Mech_ZN_1_FLR_2`) are **not** collapsed and both appear as individual rows with `Count = 1`.

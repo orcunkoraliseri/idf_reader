@@ -19,6 +19,7 @@ from extractors import (
     extract_thermostats,
     extract_ventilation,
     extract_water_use,
+    extract_hvac_systems,
 )
 from geometry import get_zone_geometry
 from idf_parser import parse_idf
@@ -26,7 +27,7 @@ from report_generator import generate_reports
 from visualizer_adapter import render_idf_to_base64
 
 
-DEFAULT_IDF_DIR = os.path.join(os.path.dirname(__file__), "ASHRAE901_STD2022")
+DEFAULT_IDF_DIR = os.path.join(os.path.dirname(__file__), "Content", "ASHRAE901_STD2022")
 
 
 def process_file(idf_path: str, output_dir: str):
@@ -55,6 +56,7 @@ def process_file(idf_path: str, output_dir: str):
     ventilation = extract_ventilation(idf_data, zone_geo)
     thermostats = extract_thermostats(idf_data, zone_geo)
     process = extract_process_loads(idf_data, zone_geo)
+    hvac_data = extract_hvac_systems(idf_data, list(zone_geo.keys()))
 
     # NEW: Generate 3D Visualization
     print("Generating 3D visualization...")
@@ -82,7 +84,7 @@ def process_file(idf_path: str, output_dir: str):
             }
         )
 
-    generate_reports(summarized_data, output_base, viz_b64)
+    generate_reports(summarized_data, output_base, viz_b64, hvac_data)
 
 
 def select_idf_interactive(idf_dir: str) -> list[str]:

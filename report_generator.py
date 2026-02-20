@@ -4,10 +4,9 @@ from __future__ import annotations
 Reporting Module for IDF Zone Metadata.
 
 This module provides functions to format the extracted zone metadata into
-CSV, Markdown, and HTML documents, including summary tables and building models.
+a polished HTML report, including summary tables and building models.
 """
 
-import csv
 import datetime
 
 
@@ -31,7 +30,10 @@ def _format_val(val: any) -> str:
 
 
 def generate_reports(
-    zone_data: list[dict], output_base_path: str, viz_b64: str | None = None
+    zone_data: list[dict],
+    output_base_path: str,
+    viz_b64: str | None = None,
+    hvac_data: dict[str, dict[str, str]] | None = None,
 ):
     """Generates CSV, Markdown, and HTML reports with zone deduplication.
 
@@ -61,25 +63,47 @@ def generate_reports(
     }
     data_headers = list(key_map.keys())[1:]  # Everything except "Zone"
 
-    # 2. Extract deduplication groupings
-    import re
-
-    def get_base_name(name: str) -> str:
-        # 1. Strip typical pod/floor/zone indices
-        base = re.sub(r"(_FLR|_Pod|_ZN|_\d)+\d*$", "", name.strip())
-        # 2. Aggressively strip elevation keywords common in prototype buildings
-        # (top, mid, bot, bottom) as users often want vertical zone stacks collapsed.
-        base = re.sub(r"(_top|_mid|_bot|_bottom|_top floor|_mid floor|_bottom floor)$", "", base, flags=re.IGNORECASE)
-        # 3. Strip any remaining trailing underscores or whitespaces
-        return base.rstrip("_ ").strip()
-
-    # Build groups of zones that share a base name
+    # 2. Process Zone Data Deduplication
     groups: dict[str, list[dict]] = {}
     for zone in zone_data:
-        base = get_base_name(zone["name"])
+        base = _get_base_name(zone["name"])
         groups.setdefault(base, []).append(zone)
 
-    # 3. Process groups to collapse identical rows
+    internal_data_keys = [key_map[h] for h in data_headers]
+    comparison_keys = [k for k in internal_data_keys if k != "floor_area"]
+    final_rows = _collapse_rows(groups, comparison_keys)
+
+    # 3. Process HVAC Data Deduplication
+    final_hvac_rows: list[dict] = []
+    if hvac_data:
+        hvac_list = []
+        for z, data in hvac_data.items():
+            row = data.copy()
+            row["name"] = z
+            hvac_list.append(row)
+
+        hvac_groups: dict[str, list[dict]] = {}
+        for h in hvac_list:
+            base = _get_base_name(h["name"])
+            hvac_groups.setdefault(base, []).append(h)
+
+        final_hvac_rows = _collapse_rows(hvac_groups, ["template", "dcv", "economizer"])
+
+def _get_base_name(name: str) -> str:
+    """Extracts the base name of a zone by stripping typical indices and elevation suffixes."""
+    import re
+    # 1. Strip typical pod/floor/zone indices
+    base = re.sub(r"(_FLR|_Pod|_ZN|_\d)+\d*$", "", name.strip())
+    # 2. Aggressively strip elevation keywords common in prototype buildings
+    base = re.sub(r"(_top|_mid|_bot|_bottom|_top floor|_mid floor|_bottom floor)$", "", base, flags=re.IGNORECASE)
+    # 3. Strip any remaining trailing underscores or whitespaces
+    return base.rstrip("_ ").strip()
+
+
+def _collapse_rows(
+    groups: dict[str, list[dict]], comparison_keys: list[str], numeric_tolerance: float = 1e-3
+) -> list[dict]:
+    """Collapses identical rows within groups and adds a 'Count' field."""
     final_rows: list[dict] = []
     for base_name, group in groups.items():
         if len(group) == 1:
@@ -88,101 +112,134 @@ def generate_reports(
             final_rows.append(row)
             continue
 
-        # Check if internal values match across the group.
-        # EXCLUSION: Floor area is ignored for deduplication as per user request.
         unique_variants: list[tuple[dict, int]] = []  # [(data_dict, count)]
 
-        for zone in group:
-            internal_data_keys = [key_map[h] for h in data_headers]
-            # Keys used for comparison (excluding floor_area)
-            comparison_keys = [k for k in internal_data_keys if k != "floor_area"]
-            
-            # Find matching existing variant
+        for item in group:
             found = False
             for idx, (variant, count) in enumerate(unique_variants):
                 match = True
                 for k in comparison_keys:
                     v1 = variant.get(k, 0)
-                    v2 = zone.get(k, 0)
-                    
-                    # Numeric comparison with larger tolerance (1e-3) for prototype rounding
+                    v2 = item.get(k, 0)
+
                     if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
-                        if abs(v1 - v2) > 1e-3:
+                        if abs(v1 - v2) > numeric_tolerance:
                             match = False
                             break
                     elif v1 != v2:
                         match = False
                         break
-                
+
                 if match:
-                    # Check if floor area (or other loads) differs within this cluster
-                    if abs(variant["floor_area"] - zone["floor_area"]) > 1e-3:
-                        variant["floor_area_varies"] = True
+                    # Specific to main zone_data: track floor_area variations within a collapsed cluster
+                    if "floor_area" in item and "floor_area" in variant:
+                        if abs(variant["floor_area"] - item["floor_area"]) > numeric_tolerance:
+                            variant["floor_area_varies"] = True
                     
                     unique_variants[idx] = (variant, count + 1)
                     found = True
                     break
-            
-            if not found:
-                row_copy = zone.copy()
-                row_copy["floor_area_varies"] = False
-                unique_variants.append((row_copy, 1))
 
-        # If a group resulted in only ONE variant, we use the base name for the row
+            if not found:
+                item_copy = item.copy()
+                if "floor_area" in item_copy:
+                    item_copy["floor_area_varies"] = False
+                unique_variants.append((item_copy, 1))
+
         if len(unique_variants) == 1:
             row, count = unique_variants[0]
             row["name"] = base_name
             row["Count"] = count
             final_rows.append(row)
         else:
-            # Variations detected; keep individual zone names and report separately
             for row, count in unique_variants:
                 row["Count"] = 1
                 final_rows.append(row)
+    return final_rows
+
+
+def generate_reports(
+    zone_data: list[dict],
+    output_base_path: str,
+    viz_b64: str | None = None,
+    hvac_data: dict[str, dict[str, str]] | None = None,
+):
+    """Generates CSV, Markdown, and HTML reports with zone deduplication.
+
+    Args:
+        zone_data: A list of dictionaries, each containing metadata for a zone.
+        output_base_path: The base filename (without extension) for the reports.
+        viz_b64: Optional base64-encoded PNG of the 3D visualization.
+        hvac_data: Optional dictionary containing HVAC metadata per zone.
+    """
+    if not zone_data:
+        print("No zone data to report.")
+        return
+
+    # 1. Define internal key map and display headers
+    key_map = {
+        "Zone": "name",
+        "Floor Area [m2]": "floor_area",
+        "Occupancy [people/m2]": "people",
+        "Lighting [W/m2]": "lights",
+        "Electric Equipment [W/m2]": "electric",
+        "Gas Equipment [W/m2]": "gas",
+        "SHW [L/h.m2]": "water",
+        "Infiltration [m3/s.m2 facade]": "infiltration",
+        "Ventilation [m3/s.person]": "vent_person",
+        "Ventilation [m3/s.m2]": "vent_area",
+        "Htg Setpoint [C]": "htg_sp",
+        "Clg Setpoint [C]": "clg_sp",
+    }
+    data_headers = list(key_map.keys())[1:]  # Everything except "Zone"
+
+    # 2. Process Zone Data Deduplication
+    groups: dict[str, list[dict]] = {}
+    for zone in zone_data:
+        base = _get_base_name(zone["name"])
+        groups.setdefault(base, []).append(zone)
+
+    internal_data_keys = [key_map[h] for h in data_headers]
+    comparison_keys = [k for k in internal_data_keys if k != "floor_area"]
+    final_rows = _collapse_rows(groups, comparison_keys)
+
+    # 3. Process HVAC Data Deduplication
+    final_hvac_rows: list[dict] = []
+    if hvac_data:
+        hvac_list = []
+        for z, data in hvac_data.items():
+            row = data.copy()
+            row["name"] = z
+            hvac_list.append(row)
+
+        hvac_groups: dict[str, list[dict]] = {}
+        for h in hvac_list:
+            base = _get_base_name(h["name"])
+            hvac_groups.setdefault(base, []).append(h)
+
+        final_hvac_rows = _collapse_rows(hvac_groups, ["template", "dcv", "economizer"])
 
     # 4. Final output setup
     headers = ["Zone", "Count"] + data_headers
-    csv_path = f"{output_base_path}.csv"
-    md_path = f"{output_base_path}.md"
-
-    # 5. Generate CSV
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        writer.writeheader()
-        for zone in final_rows:
-            row = {"Zone": zone["name"], "Count": zone["Count"]}
-            for h in data_headers:
-                row[h] = _format_val(zone.get(key_map[h], 0))
-            writer.writerow(row)
-
-    # 6. Generate Markdown
-    with open(md_path, "w", encoding="utf-8") as f:
-        f.write("# Zone Metadata Summary Report\n\n")
-        f.write(
-            f"**Generated on:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        )
-        f.write("| " + " | ".join(headers) + " |\n")
-        f.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
-        for zone in final_rows:
-            row_vals = [zone["name"], str(zone["Count"])]
-            for h in data_headers:
-                row_vals.append(_format_val(zone.get(key_map[h], 0)))
-            f.write("| " + " | ".join(row_vals) + " |\n")
-
-    # 7. Generate HTML
     html_path = f"{output_base_path}.html"
+
+    # 5. Generate HTML
     with open(html_path, "w", encoding="utf-8") as f:
         # Re-build key_map for HTML (adding Count)
         html_key_map = {"Zone": "name", "Count": "Count"}
         for h in data_headers:
             html_key_map[h] = key_map[h]
-        f.write(generate_html_content(final_rows, headers, html_key_map, viz_b64))
+        f.write(generate_html_content(final_rows, headers, html_key_map, viz_b64, final_hvac_rows))
 
-    print(f"Reports generated:\n  - {csv_path}\n  - {md_path}\n  - {html_path}")
+    print(f"Report generated:\n  - {html_path}")
 
 
 def generate_html_content(
-    zone_data: list[dict], headers: list[str], key_map: dict, viz_b64: str | None = None
+    zone_data: list[dict],
+    headers: list[str],
+    key_map: dict,
+    viz_b64: str | None = None,
+    hvac_data: list[dict] | None = None,
 ) -> str:
     """Creates a premium HTML document with a styled table."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -214,6 +271,29 @@ def generate_html_content(
         rows_html += f"<tr>{cells_html}</tr>"
 
     headers_html = "".join([f"<th>{h}</th>" for h in headers])
+
+    hvac_html = ""
+    if hvac_data:
+        hvac_headers = ["Thermal Zone", "Count", "Honeybee HVAC Template", "DCV Status", "Economizer Configuration"]
+        hvac_rows = ""
+        for row in hvac_data:
+            hvac_rows += f"<tr><td>{row['name']}</td><td>{row['Count']}</td><td>{row.get('template', 'Unknown')}</td><td>{row.get('dcv', 'Unknown')}</td><td>{row.get('economizer', 'Unknown')}</td></tr>"
+        
+        hvac_html = f"""
+        <div class="card">
+            <div class="card-header">HVAC System Metadata</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>{"".join([f"<th>{h}</th>" for h in hvac_headers])}</tr>
+                    </thead>
+                    <tbody>
+                        {hvac_rows}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        """
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -363,6 +443,8 @@ def generate_html_content(
                 </table>
             </div>
         </div>
+
+        {hvac_html}
     </div>
 </body>
 </html>"""

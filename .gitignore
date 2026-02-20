@@ -8,10 +8,10 @@ env/
 .env
 
 # Data and Outputs
-outputs/
-*.csv
-*.md
-*.html
+outputs/*.csv
+outputs/*.md
+outputs/*.html
+outputs/*.png
 
 # OS files
 .DS_Store

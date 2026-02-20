@@ -286,3 +286,165 @@ def extract_process_loads(idf_data: dict, zone_geo: dict) -> dict[str, float]:
                 continue
 
     return results
+
+
+def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dict[str, str]]:
+    """Extracts HVAC templates, economizer limits, and DCV settings.
+    
+    Args:
+        idf_data: Parsed IDF dictionary.
+        zone_names: List of zone names.
+        
+    Returns:
+        A dictionary mapping zone names to their HVAC template, dcv, and economizer types.
+    """
+    conditioned_zones = set()
+    for obj in idf_data.get("ZONECONTROL:THERMOSTAT", []):
+        if len(obj) >= 2:
+            conditioned_zones.add(obj[1])
+
+    zone_equip_list = {}
+    zone_return_nodes = {}
+    for obj in idf_data.get("ZONEHVAC:EQUIPMENTCONNECTIONS", []):
+        if len(obj) > 4:
+            zone_equip_list[obj[0]] = obj[1]
+            # Zone Name -> Return Air Node Name (field 5)
+            # Actually fields are: 0: Zone Name, 1: Equipment List Name, 2: Inlet Node, 3: Exhaust Node, 4: Air Node, 5: Return Air Node
+            if len(obj) >= 6:
+                zone_return_nodes[obj[0]] = obj[5]
+
+    equip_list_objects = {}
+    for obj in idf_data.get("ZONEHVAC:EQUIPMENTLIST", []):
+        if len(obj) >= 2:
+            name = obj[0]
+            types_names = []
+            for i in range(2, len(obj) - 1):
+                part = str(obj[i]).upper()
+                if part.startswith("ZONEHVAC:") or part.startswith("AIRTERMINAL:") or part.startswith("FAN:"):
+                    types_names.append((obj[i], obj[i + 1]))
+            equip_list_objects[name] = types_names
+
+    controller_oa = idf_data.get("CONTROLLER:OUTDOORAIR", [])
+    mech_vent = idf_data.get("CONTROLLER:MECHANICALVENTILATION", [])
+    zone_mixers = idf_data.get("AIRLOOPHVAC:ZONEMIXER", [])
+    zone_splitters = idf_data.get("AIRLOOPHVAC:ZONESPLITTER", [])
+
+    # Global building-level checks to refine Honeybee templates (e.g., Boiler, Chiller, District loops)
+    has_boiler = "BOILER:HOTWATER" in idf_data
+    has_district_htg = ("DISTRICTHEATING" in idf_data) or ("DISTRICTHEATING:WATER" in idf_data)
+    has_district_clg = ("DISTRICTCOOLING" in idf_data) or ("DISTRICTCOOLING:WATER" in idf_data)
+    
+    has_ac_chiller = False
+    has_chiller = False
+    for c in idf_data.get("CHILLER:ELECTRIC:EIR", []) + idf_data.get("CHILLER:ELECTRIC", []):
+        has_chiller = True
+        if any("AIRCOOLED" in str(val).upper().replace(" ", "") for val in c):
+            has_ac_chiller = True
+            
+    has_gas_coil = ("COIL:HEATING:FUEL" in idf_data) or ("COIL:HEATING:GAS" in idf_data)
+    has_elec_coil = "COIL:HEATING:ELECTRIC" in idf_data
+    has_hp_coil = ("COIL:HEATING:DX:SINGLEMIXED" in idf_data) or ("COIL:HEATING:DX:SINGLESPEED" in idf_data) or ("COIL:HEATING:DX:MULTISPEED" in idf_data)
+    has_baseboard = ("ZONEHVAC:BASEBOARD:CONVECTIVE:WATER" in idf_data) or ("ZONEHVAC:BASEBOARD:CONVECTIVE:ELECTRIC" in idf_data)
+
+    # Resolve specific VAV Base
+    vav_cool = "DCW" if has_district_clg else ("ACChiller" if has_ac_chiller else "Chiller")
+    if has_district_htg:
+        vav_heat = "DHW"
+    elif has_boiler:
+        vav_heat = "Boiler"
+    elif has_hp_coil:
+        vav_heat = "ASHP"
+    elif has_gas_coil:
+        vav_heat = "GasCoil"
+    else:
+        vav_heat = "PFP" 
+    vav_template_base = f"VAV_{vav_cool}_{vav_heat}"
+
+    # Resolve specific PSZ Base
+    psz_template_base = "PSZAC"
+    if has_district_htg:
+        psz_template_base = "PSZAC_DHWBaseboard" if has_baseboard else "PSZAC_DHW"
+    elif has_boiler:
+        psz_template_base = "PSZAC_BoilerBaseboard" if has_baseboard else "PSZAC_Boiler"
+    elif has_hp_coil:
+        psz_template_base = "PSZAC_ASHP"
+    elif has_gas_coil:
+        psz_template_base = "PSZAC_GasHeaters" if has_baseboard else "PSZAC_GasCoil"
+    elif has_elec_coil:
+        psz_template_base = "PSZAC_ElectricBaseboard" if has_baseboard else "PSZAC_ElectricCoil"
+
+    # Map Return Air Node to AirLoop prefix
+    return_node_to_prefix = {}
+    for mixer in zone_mixers:
+        if len(mixer) >= 3:
+            mixer_name = mixer[0]
+            prefix = mixer_name.split()[0]  # e.g., "PSZ-AC:1"
+            for inlet in mixer[2:]:
+                return_node_to_prefix[inlet.upper()] = prefix
+
+    results = {}
+    
+    for z in zone_names:
+        if z not in conditioned_zones and z not in zone_equip_list:
+            results[z] = {"template": "Unconditioned", "dcv": "N/A", "economizer": "N/A"}
+            continue
+        
+        template = "Unknown"
+        dcv = "No"
+        economizer = "NoEconomizer"
+
+        eq_list_name = zone_equip_list.get(z)
+        equipments = equip_list_objects.get(eq_list_name, [])
+
+        if not equipments:
+            results[z] = {"template": "Unconditioned", "dcv": "N/A", "economizer": "N/A"}
+            continue
+
+        for eq_type, eq_name in equipments:
+            eq_typ = eq_type.upper()
+            if "PACKAGEDTERMINALAIRCONDITIONER" in eq_typ:
+                template = "PTAC"
+            elif "PACKAGEDTERMINALHEATPUMP" in eq_typ:
+                template = "PTHP"
+            elif "WATERTOAIRHEATPUMP" in eq_typ:
+                template = "WSHP"
+            elif "FOURPIPEFANCOIL" in eq_typ:
+                template = "FCUwithDOASAbridged"
+            elif "IDEALLOADSAIRSYSTEM" in eq_typ:
+                template = "IdealLoads"
+            elif "AIRDISTRIBUTIONUNIT" in eq_typ:
+                # Find the ATU
+                for adu in idf_data.get("ZONEHVAC:AIRDISTRIBUTIONUNIT", []):
+                    if adu[0] == eq_name:
+                        atu_type = adu[2].upper() if len(adu) > 2 else ""
+                        if "VAV" in atu_type:
+                            template = vav_template_base
+                        elif "CONSTANTVOLUME" in atu_type:
+                            template = psz_template_base
+                        break
+            
+            if template == "Unknown":
+                if "PSZ" in eq_name.upper(): template = psz_template_base
+                elif "VAV" in eq_name.upper(): template = vav_template_base
+                elif "FCU" in eq_name.upper(): template = "FCUwithDOASAbridged"
+
+        prefix = z.split("_")[0]
+        eq_first_name = equipments[0][1].split()[0] if equipments else ""
+        
+        # Determine airloop prefix from Return Node -> ZoneMixer mapping
+        return_node = zone_return_nodes.get(z, "")
+        airloop_prefix = return_node_to_prefix.get(return_node.upper(), "")
+
+        for oa in controller_oa:
+            oa_name = oa[0].upper()
+            if (z.upper() in oa_name) or (prefix.upper() in oa_name) or (eq_first_name and eq_first_name.upper() in oa_name) or (airloop_prefix and airloop_prefix.upper() in oa_name):
+                economizer = oa[7] if len(oa) > 7 else "Unknown"
+        
+        for mv in mech_vent:
+            mv_name = mv[0].upper()
+            if (z.upper() in mv_name) or (prefix.upper() in mv_name) or (eq_first_name and eq_first_name.upper() in mv_name) or (airloop_prefix and airloop_prefix.upper() in mv_name):
+                dcv = mv[2] if len(mv) > 2 else "Unknown"
+
+        results[z] = {"template": template, "dcv": dcv, "economizer": economizer}
+    return results
+

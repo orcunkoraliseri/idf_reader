@@ -8,9 +8,7 @@ A lightweight, dependency-minimal Python toolkit for parsing EnergyPlus `.idf` f
 
 This project targets the **16 ASHRAE 90.1-2022 prototype buildings** (Denver climate zone) and produces:
 
-- **CSV** — machine-readable data table
-- **Markdown** — human-readable summary
-- **HTML** — polished, dark-themed interactive report with an embedded 3D floor plan
+- **HTML** — polished, dark-themed interactive report with an embedded 3D floor plan. Contains detailed zone metadata and HVAC system tables.
 
 All values are normalized to standard SI units (W/m², m³/s·m², etc.) for direct comparison across building types.
 
@@ -40,7 +38,8 @@ idf_reader/
 ├── report_generator.py        # CSV, Markdown & HTML report generation
 ├── visualizer_adapter.py      # 3D rendering with Matplotlib, returns base64 PNG
 │
-├── ASHRAE901_STD2022/         # 16 EnergyPlus prototype IDF files (Denver, 2022)
+├── Content/                   # Data directory
+│   └── ASHRAE901_STD2022/     # 16 EnergyPlus prototype IDF files (Denver, 2022)
 ├── docs/                      # Implementation plan and design notes
 ├── examples/                  # Standalone visualizer scripts
 └── outputs/                   # Auto-generated reports (gitignored)
@@ -67,7 +66,7 @@ python main.py
 ### 3. Single-file mode
 
 ```bash
-python main.py --idf ASHRAE901_STD2022/ASHRAE901_OfficeLarge_STD2022_Denver.idf
+python main.py --idf Content/ASHRAE901_STD2022/ASHRAE901_OfficeLarge_STD2022_Denver.idf
 ```
 
 ### 4. Batch mode (process all IDF files)
@@ -76,7 +75,7 @@ python main.py --idf ASHRAE901_STD2022/ASHRAE901_OfficeLarge_STD2022_Denver.idf
 python main.py --all
 ```
 
-Reports are saved to the `outputs/` directory (created automatically).
+Reports are saved to the `outputs/` directory (created automatically) as `.html` files.
 
 ---
 
@@ -140,7 +139,7 @@ Pure Matplotlib 3D renderer. Parses relative and absolute coordinate systems, re
 ### `report_generator.py`
 - **Deduplication engine**: Groups zones by base name (stripping `_FLR`, `_ZN`, `_top`, `_bot`, etc.) and collapses identical-load zones. Floor area is intentionally excluded from the comparison criteria.
 - **Formatter**: Strips trailing zeros from all numeric values.
-- Writes CSV, Markdown, and a self-contained dark-themed HTML report.
+- Writes a self-contained dark-themed HTML report.
 
 ---
 

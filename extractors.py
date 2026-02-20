@@ -304,14 +304,9 @@ def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dic
             conditioned_zones.add(obj[1])
 
     zone_equip_list = {}
-    zone_return_nodes = {}
     for obj in idf_data.get("ZONEHVAC:EQUIPMENTCONNECTIONS", []):
         if len(obj) > 4:
             zone_equip_list[obj[0]] = obj[1]
-            # Zone Name -> Return Air Node Name (field 5)
-            # Actually fields are: 0: Zone Name, 1: Equipment List Name, 2: Inlet Node, 3: Exhaust Node, 4: Air Node, 5: Return Air Node
-            if len(obj) >= 6:
-                zone_return_nodes[obj[0]] = obj[5]
 
     equip_list_objects = {}
     for obj in idf_data.get("ZONEHVAC:EQUIPMENTLIST", []):
@@ -345,8 +340,14 @@ def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dic
     has_elec_coil = "COIL:HEATING:ELECTRIC" in idf_data
     has_hp_coil = ("COIL:HEATING:DX:SINGLEMIXED" in idf_data) or ("COIL:HEATING:DX:SINGLESPEED" in idf_data) or ("COIL:HEATING:DX:MULTISPEED" in idf_data)
     has_baseboard = ("ZONEHVAC:BASEBOARD:CONVECTIVE:WATER" in idf_data) or ("ZONEHVAC:BASEBOARD:CONVECTIVE:ELECTRIC" in idf_data)
+    has_dx_cooling = (
+        "COIL:COOLING:DX:TWOSPEED" in idf_data
+        or "COIL:COOLING:DX:SINGLESPEED" in idf_data
+        or "COIL:COOLING:DX:MULTISPEED" in idf_data
+        or "COIL:COOLING:DX:VARIABLESPEED" in idf_data
+    )
 
-    # Resolve specific VAV Base
+    # Resolve specific VAV Base (System 7/8: chilled water cooling)
     vav_cool = "DCW" if has_district_clg else ("ACChiller" if has_ac_chiller else "Chiller")
     if has_district_htg:
         vav_heat = "DHW"
@@ -359,6 +360,19 @@ def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dic
     else:
         vav_heat = "PFP" 
     vav_template_base = f"VAV_{vav_cool}_{vav_heat}"
+
+    # Resolve specific PVAV Base (System 5/6: DX cooling)
+    if has_district_htg:
+        pvav_heat = "DHW"
+    elif has_boiler:
+        pvav_heat = "Boiler"
+    elif has_hp_coil:
+        pvav_heat = "ASHP"
+    elif has_gas_coil:
+        pvav_heat = "BoilerElectricReheat"
+    else:
+        pvav_heat = "PFP"
+    pvav_template_base = f"PVAV_{pvav_heat}"
 
     # Resolve specific PSZ Base
     psz_template_base = "PSZAC"
@@ -373,14 +387,54 @@ def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dic
     elif has_elec_coil:
         psz_template_base = "PSZAC_ElectricBaseboard" if has_baseboard else "PSZAC_ElectricCoil"
 
-    # Map Return Air Node to AirLoop prefix
-    return_node_to_prefix = {}
-    for mixer in zone_mixers:
-        if len(mixer) >= 3:
-            mixer_name = mixer[0]
-            prefix = mixer_name.split()[0]  # e.g., "PSZ-AC:1"
-            for inlet in mixer[2:]:
-                return_node_to_prefix[inlet.upper()] = prefix
+    # Build zone → AirLoop name mapping via ZoneSplitter
+    # ZoneSplitter outlet nodes are named like "<ZoneName> VAV Box Inlet Node"
+    # The AirLoop name is derived from the splitter name prefix.
+    zone_to_airloop: dict[str, str] = {}
+
+    # First, map splitter names to AirLoop names via AirLoopHVAC objects
+    splitter_to_airloop: dict[str, str] = {}
+    for airloop in idf_data.get("AIRLOOPHVAC:SUPPLYPATH", []):
+        # Fields: Name, Supply Inlet Node, Component Type, Component Name
+        if len(airloop) >= 4:
+            airloop_name = airloop[0]
+            for i in range(2, len(airloop) - 1, 2):
+                comp_type = str(airloop[i]).upper()
+                if "ZONESPLITTER" in comp_type:
+                    splitter_to_airloop[airloop[i + 1]] = airloop_name
+
+    for splitter in zone_splitters:
+        if len(splitter) >= 3:
+            splitter_name = splitter[0]
+            airloop_name = splitter_to_airloop.get(
+                splitter_name, splitter_name.replace(" Supply Air Splitter", "")
+            )
+            # Outlet nodes (index 2+) are zone inlet nodes
+            for outlet_node in splitter[2:]:
+                # Extract zone name from node: "<ZoneName> VAV Box Inlet Node"
+                zone_from_node = outlet_node.rsplit(" VAV Box", 1)[0]
+                if " " in zone_from_node:
+                    zone_from_node = outlet_node.rsplit(" ", 3)[0]
+                zone_to_airloop[zone_from_node.upper()] = airloop_name
+
+    # Build AirLoop → Controller:OutdoorAir mapping
+    airloop_to_oa: dict[str, list] = {}
+    for oa in controller_oa:
+        oa_name = oa[0].upper()
+        # Match by finding the AirLoop whose name is a prefix of the OA controller
+        for airloop_name in set(zone_to_airloop.values()):
+            if airloop_name.upper().replace(" ", "_") in oa_name.replace(" ", "_"):
+                airloop_to_oa[airloop_name] = oa
+                break
+
+    # Build AirLoop → Controller:MechanicalVentilation mapping
+    airloop_to_mv: dict[str, list] = {}
+    for mv in mech_vent:
+        mv_name = mv[0].upper()
+        for airloop_name in set(zone_to_airloop.values()):
+            if airloop_name.upper().replace(" ", "_") in mv_name.replace(" ", "_"):
+                airloop_to_mv[airloop_name] = mv
+                break
 
     results = {}
     
@@ -418,32 +472,38 @@ def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dic
                     if adu[0] == eq_name:
                         atu_type = adu[2].upper() if len(adu) > 2 else ""
                         if "VAV" in atu_type:
-                            template = vav_template_base
+                            # VAV terminal found — distinguish VAV vs PVAV
+                            # by cooling source: chiller → VAV, DX → PVAV
+                            if has_chiller or has_district_clg:
+                                template = vav_template_base
+                            elif has_dx_cooling:
+                                template = pvav_template_base
+                            else:
+                                template = vav_template_base
                         elif "CONSTANTVOLUME" in atu_type:
                             template = psz_template_base
                         break
             
             if template == "Unknown":
                 if "PSZ" in eq_name.upper(): template = psz_template_base
-                elif "VAV" in eq_name.upper(): template = vav_template_base
+                elif "VAV" in eq_name.upper():
+                    if has_chiller or has_district_clg:
+                        template = vav_template_base
+                    elif has_dx_cooling:
+                        template = pvav_template_base
+                    else:
+                        template = vav_template_base
                 elif "FCU" in eq_name.upper(): template = "FCUwithDOASAbridged"
 
-        prefix = z.split("_")[0]
-        eq_first_name = equipments[0][1].split()[0] if equipments else ""
-        
-        # Determine airloop prefix from Return Node -> ZoneMixer mapping
-        return_node = zone_return_nodes.get(z, "")
-        airloop_prefix = return_node_to_prefix.get(return_node.upper(), "")
-
-        for oa in controller_oa:
-            oa_name = oa[0].upper()
-            if (z.upper() in oa_name) or (prefix.upper() in oa_name) or (eq_first_name and eq_first_name.upper() in oa_name) or (airloop_prefix and airloop_prefix.upper() in oa_name):
-                economizer = oa[7] if len(oa) > 7 else "Unknown"
-        
-        for mv in mech_vent:
-            mv_name = mv[0].upper()
-            if (z.upper() in mv_name) or (prefix.upper() in mv_name) or (eq_first_name and eq_first_name.upper() in mv_name) or (airloop_prefix and airloop_prefix.upper() in mv_name):
-                dcv = mv[2] if len(mv) > 2 else "Unknown"
+        # Look up DCV and Economizer via zone → AirLoop → Controller chain
+        airloop_name = zone_to_airloop.get(z.upper())
+        if airloop_name:
+            oa = airloop_to_oa.get(airloop_name)
+            if oa:
+                economizer = oa[7] if len(oa) > 7 else "NoEconomizer"
+            mv = airloop_to_mv.get(airloop_name)
+            if mv:
+                dcv = mv[2] if len(mv) > 2 else "No"
 
         results[z] = {"template": template, "dcv": dcv, "economizer": economizer}
     return results

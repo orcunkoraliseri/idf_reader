@@ -28,10 +28,12 @@ Add new extraction functions to pull HVAC system configurations:
 - **`extract_hvac_systems(idf_data, zone_geo)`**:
   - **Conditioning Status**: Check if the zone is linked to a thermostat (`ZoneControl:Thermostat`) and/or HVAC equipment. If not, label as 'Unconditioned'.
   - **Honeybee Template Mapping**: Trace the zone's connections in `ZoneHVAC:*` objects or `AirTerminal:*` objects linked to `AirLoopHVAC`.
-  - **Plant-Level Inference**: Scans global objects (Chillers, Boilers, Coils) to refine generic base classes into specific Honeybee sub-types (e.g., `VAV_Chiller_Boiler` instead of just `VAV`).
+  - **VAV vs PVAV Distinction**: When a VAV terminal is detected, the system checks for a chiller (System 7/8 → `VAV`) vs DX cooling coils (System 5/6 → `PVAV`). This is critical for buildings like Medium Office which use DX packaged units with VAV terminals.
+  - **Plant-Level Inference**: Scans global objects (Chillers, Boilers, DX Coils) to refine generic base classes into specific Honeybee sub-types (e.g., `VAV_Chiller_Boiler`, `PVAV_BoilerElectricReheat`).
   - **Robust Equipment Parsing**: Iterates through `ZoneHVAC:EquipmentList` fields to correctly identify secondary equipment and air distribution units, even when sequence fields are omitted (fixing "Unknown" zone issues).
-  - **Economizer Type**: For the identified system's `Controller:OutdoorAir` object, extract the `Economizer Control Type` field. Defaults to `NoEconomizer` if no controller is found for a conditioned zone.
-  - **DCV Status**: For the identified system's `Controller:MechanicalVentilation` object, extract the `Demand Controlled Ventilation` field. Defaults to `No` if no controller is found (common in Hospital critical zones like ER/OR).
+  - **Zone → AirLoop → Controller Mapping**: Builds a proper chain from `AirLoopHVAC:ZoneSplitter` outlet nodes to AirLoop names, then maps each AirLoop to its `Controller:OutdoorAir` and `Controller:MechanicalVentilation`. This replaces heuristic prefix matching and correctly resolves DCV/Economizer for all prototype buildings.
+  - **Economizer Type**: Extracted via AirLoop → Controller:OutdoorAir chain. Defaults to `NoEconomizer` if no controller is found.
+  - **DCV Status**: Extracted via AirLoop → Controller:MechanicalVentilation chain. Defaults to `No` if no controller is found (common in Hospital critical zones like ER/OR).
 
 ### `main.py`
 Update the main entry point to call the new HVAC extractor and pass the results to the report generator.

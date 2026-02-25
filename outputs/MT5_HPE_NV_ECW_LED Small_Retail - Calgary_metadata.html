@@ -135,7 +135,7 @@
 <body>
     <div class="container">
         <h1>Zone Metadata Summary</h1>
-        <div class="metadata">Generated on: 2026-02-24 11:15:23</div>
+        <div class="metadata">Generated on: 2026-02-25 13:02:12</div>
         
         
         <div class="card viz-container">
@@ -149,10 +149,10 @@
             <div class="table-container">
                 <table>
                     <thead>
-                        <tr><th>Zone</th><th>Count</th><th>Floor Area [m2]</th><th>Occupancy [people/m2]</th><th>Lighting [W/m2]</th><th>Electric Equipment [W/m2]</th><th>Gas Equipment [W/m2]</th><th>SHW [L/h.m2]</th><th>Infiltration [m3/s.m2 facade]</th><th>Ventilation [m3/s.person]</th><th>Ventilation [m3/s.m2]</th><th>Htg Setpoint [C]</th><th>Clg Setpoint [C]</th></tr>
+                        <tr><th>Zone</th><th>Count</th><th>Floor Area [m2]</th><th>Occupancy [people/m2]</th><th>Lighting [W/m2]</th><th>Electric Equipment [W/m2]</th><th>Gas Equipment [W/m2]</th><th>SHW [L/h.m2]</th><th>Infiltration [m3/s.m2 facade]</th><th>Ventilation [m3/s.person]</th><th>Ventilation [m3/s.m2]</th><th>Ventilation [ACH]</th><th>Htg Setpoint [C]</th><th>Clg Setpoint [C]</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td class="wrap-txt">5_ZN_1_FLR_1_SEC_1</td><td>1</td><td>78.54</td><td>0.0077</td><td>8.9999</td><td>5.9327</td><td>2.344</td><td>0.1015</td><td>0.0005</td><td>0</td><td>0</td><td>13</td><td>25</td></tr><tr><td class="wrap-txt">5_ZN_1_FLR_1_SEC_2</td><td>1</td><td>61.078</td><td>0.0077</td><td>8.9996</td><td>5.9325</td><td>2.344</td><td>0.0101</td><td>0.0005</td><td>0</td><td>0</td><td>13</td><td>25</td></tr>
+                        <tr><td class="wrap-txt">5_ZN_1_FLR_1_SEC_1</td><td>1</td><td>78.54</td><td>0.0077</td><td>8.9999</td><td>5.9327</td><td>2.344</td><td>0.1015</td><td>0.0005</td><td>0</td><td>0.0009</td><td>0</td><td>13</td><td>25</td></tr><tr><td class="wrap-txt">5_ZN_1_FLR_1_SEC_2</td><td>1</td><td>61.078</td><td>0.0077</td><td>8.9996</td><td>5.9325</td><td>2.344</td><td>0.0101</td><td>0.0005</td><td>0</td><td>0.0009</td><td>0</td><td>13</td><td>25</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -219,6 +219,24 @@
         </tr>
         
         <tr>
+            <td style="font-weight:600; color:var(--accent);">Outdoor Air (DSOA)</td>
+            <td class="wrap-txt">0.057316225695446</td>
+            <td class="wrap-txt">5_SZ DSOA ZN_1_FLR_1_SEC (×2)</td>
+        </tr>
+        
+        <tr>
+            <td style="font-weight:600; color:var(--accent);">Outdoor Air (DSOA)</td>
+            <td class="wrap-txt">0.073704617803385</td>
+            <td class="wrap-txt">5_SZ DSOA ZN_1_FLR_1_SEC (×2)</td>
+        </tr>
+        
+        <tr>
+            <td style="font-weight:600; color:var(--accent);">Outdoor Air (DSOA)</td>
+            <td class="wrap-txt">0.104120314886338</td>
+            <td class="wrap-txt">5_SZ DSOA ZN_1_FLR_1_SEC (×1)</td>
+        </tr>
+        
+        <tr>
             <td style="font-weight:600; color:var(--accent);">Service Hot Water</td>
             <td class="wrap-txt">5_Hours_of_operation</td>
             <td class="wrap-txt">5_ZN_1_FLR_1_SEC (×5)</td>
@@ -234,6 +252,12 @@
             <td style="font-weight:600; color:var(--accent);">Cooling Setpoint</td>
             <td class="wrap-txt">5_CLGSETP_SCH</td>
             <td class="wrap-txt">5_ZN_1_FLR_1_SEC_1 DualSPSched, 5_ZN_1_FLR_1_SEC_2 DualSPSched, 5_ZN_1_FLR_1_SEC_3 DualSPSched, 5_ZN_1_FLR_1_SEC_4 DualSPSched, 5_ZN_1_FLR_1_SEC_5 DualSPSched (×5)</td>
+        </tr>
+        
+        <tr>
+            <td style="font-weight:600; color:var(--accent);">Natural Ventilation</td>
+            <td class="wrap-txt">5_VentingSched</td>
+            <td class="wrap-txt">5_ZN_1_FLR_1_SEC (×4)</td>
         </tr>
         
                 </tbody>
@@ -277,6 +301,75 @@
             <td>Fuel: Electricity</td>
         </tr>
         
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+        
+        
+    <div class="card">
+        <div class="card-header">Natural Ventilation Parameters</div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Zone</th>
+                        <th>Object Name</th>
+                        <th>Opening Area [m2]</th>
+                        <th>Schedule</th>
+                        <th>Min Indoor Temp [C]</th>
+                        <th>Max Indoor Temp [C]</th>
+                        <th>Min Outdoor Temp [C]</th>
+                        <th>Max Outdoor Temp [C]</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+            <tr>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_1</td>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_1_WALL_1_WINDOW_1_NV</td>
+                <td>3.92</td>
+                <td class="wrap-txt">5_VentingSched</td>
+                <td>23</td>
+                <td>25.5</td>
+                <td>-32</td>
+                <td>33</td>
+            </tr>
+            
+            <tr>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_2</td>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_2_WALL_1_WINDOW_1_NV</td>
+                <td>6.47</td>
+                <td class="wrap-txt">5_VentingSched</td>
+                <td>23</td>
+                <td>25.5</td>
+                <td>-32</td>
+                <td>33</td>
+            </tr>
+            
+            <tr>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_3</td>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_3_WALL_3_WINDOW_1_NV</td>
+                <td>7.84</td>
+                <td class="wrap-txt">5_VentingSched</td>
+                <td>23</td>
+                <td>25.5</td>
+                <td>-32</td>
+                <td>33</td>
+            </tr>
+            
+            <tr>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_4</td>
+                <td class="wrap-txt">5_ZN_1_FLR_1_SEC_4_WALL_4_WINDOW_1_NV</td>
+                <td>6.47</td>
+                <td class="wrap-txt">5_VentingSched</td>
+                <td>23</td>
+                <td>25.5</td>
+                <td>-32</td>
+                <td>33</td>
+            </tr>
+            
                 </tbody>
             </table>
         </div>

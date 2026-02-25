@@ -12,6 +12,7 @@ from extractors import (
     extract_thermostats,
     extract_ventilation,
     extract_water_use,
+    extract_natural_ventilation,
 )
 from construction_extractor import extract_baseline_constructions
 from geometry import get_zone_geometry
@@ -117,6 +118,7 @@ def process_file(idf_path: str, output_dir: str) -> None:
     ventilation = extract_ventilation(idf_data, zone_geo)
     thermostats = extract_thermostats(idf_data, zone_geo)
     process = extract_process_loads(idf_data, zone_geo)
+    natural_vent = extract_natural_ventilation(idf_data, zone_geo)
     hvac_data = extract_hvac_systems(idf_data, list(zone_geo.keys()))
     
     # Extract building-level process loads (Exterior lights, elevators, refrig)
@@ -145,6 +147,7 @@ def process_file(idf_path: str, output_dir: str) -> None:
                 "infiltration": infiltration.get(zone_name, 0.0),
                 "vent_person": ventilation.get(zone_name, {}).get("per_person", 0.0),
                 "vent_area": ventilation.get(zone_name, {}).get("per_area", 0.0),
+                "vent_ach": ventilation.get(zone_name, {}).get("ach", 0.0),
                 "htg_sp": thermostats.get(zone_name, {}).get("heating", 0.0),
                 "clg_sp": thermostats.get(zone_name, {}).get("cooling", 0.0),
                 "process": process.get(zone_name, 0.0),
@@ -162,7 +165,8 @@ def process_file(idf_path: str, output_dir: str) -> None:
 
     generate_reports(
         summarized_data, output_base, viz_b64, hvac_data, 
-        construction_data, building_process_loads, schedule_assignments
+        construction_data, building_process_loads, schedule_assignments,
+        natural_vent
     )
 
 

@@ -27,9 +27,12 @@ def extract_zone_schedules(idf_data: dict) -> list[dict[str, Any]]:
         "Electric Equipment": defaultdict(set),
         "Gas Equipment": defaultdict(set),
         "Infiltration": defaultdict(set),
+        "Ventilation (MinOA)": defaultdict(set),
+        "Outdoor Air (DSOA)": defaultdict(set),
         "Service Hot Water": defaultdict(set),
         "Heating Setpoint": defaultdict(set),
         "Cooling Setpoint": defaultdict(set),
+        "Natural Ventilation": defaultdict(set),
     }
 
     # 1. Occupancy (People) - Zone idx 1, Sched idx 2
@@ -67,7 +70,28 @@ def extract_zone_schedules(idf_data: dict) -> list[dict[str, Any]]:
             if zone and sched:
                 mappings["Infiltration"][sched].add(zone)
 
-    # 6. Service Hot Water - Sched idx 3, Zone idx 7
+    # 6. Ventilation (MinOA) - Sched idx 1, Zones at idx 5, 8, 11...
+    for obj in idf_data.get("CONTROLLER:MECHANICALVENTILATION", []):
+        if len(obj) > 1:
+            sched = obj[1]
+            if sched:
+                # Zones start at index 5 and repeat every 3 fields
+                for i in range(5, len(obj), 3):
+                    zone = obj[i]
+                    if zone:
+                        mappings["Ventilation (MinOA)"][sched].add(zone)
+
+    # 7. Outdoor Air (DSOA) - Optional sched idx 4. Zone name from object name
+    for obj in idf_data.get("DESIGNSPECIFICATION:OUTDOORAIR", []):
+        if len(obj) > 4:
+            sched = obj[4]
+            if sched:
+                name = obj[0]
+                # Extract zone name by removing 'SZ DSOA ' prefix if present
+                zone = name.replace("SZ DSOA ", "") if name.startswith("SZ DSOA ") else name
+                mappings["Outdoor Air (DSOA)"][sched].add(zone)
+
+    # 8. Service Hot Water - Sched idx 3, Zone idx 7
     for obj in idf_data.get("WATERUSE:EQUIPMENT", []):
         if len(obj) > 7:
             sched, zone = obj[3], obj[7]
@@ -86,12 +110,21 @@ def extract_zone_schedules(idf_data: dict) -> list[dict[str, Any]]:
             if clg_sched:
                 mappings["Cooling Setpoint"][clg_sched].add(zone)
 
+    # 11. Natural Ventilation (WindAndStackOpenArea) - Zone idx 1, Sched idx 3
+    for obj in idf_data.get("ZONEVENTILATION:WINDANDSTACKOPENAREA", []):
+        if len(obj) > 3:
+            zone, sched = obj[1], obj[3]
+            if zone and sched:
+                mappings["Natural Ventilation"][sched].add(zone)
+
     # Convert to flat list of records
     results = []
     # Use explicit order to keep table consistent
     load_order = [
         "Occupancy", "Lighting", "Electric Equipment", "Gas Equipment",
-        "Infiltration", "Service Hot Water", "Heating Setpoint", "Cooling Setpoint"
+        "Infiltration", "Ventilation (MinOA)", "Outdoor Air (DSOA)", 
+        "Service Hot Water", "Heating Setpoint", "Cooling Setpoint",
+        "Natural Ventilation"
     ]
     
     for lt in load_order:

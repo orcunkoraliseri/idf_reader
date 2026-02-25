@@ -254,6 +254,61 @@ def _build_process_loads_html(process_data: list[dict]) -> str:
     """
 
 
+def _build_natural_ventilation_html(natural_vent_data: dict[str, list[dict]]) -> str:
+    """Creates the 'Natural Ventilation Parameters' table."""
+    if not natural_vent_data:
+        return ""
+
+    rows_html = ""
+    # Only show zones that actually have natural ventilation
+    for zone_name in sorted(natural_vent_data.keys()):
+        objs = natural_vent_data[zone_name]
+        if not objs:
+            continue
+            
+        for obj in objs:
+            rows_html += f"""
+            <tr>
+                <td class="wrap-txt">{zone_name}</td>
+                <td class="wrap-txt">{obj['name']}</td>
+                <td>{_format_val(obj['opening_area'])}</td>
+                <td class="wrap-txt">{obj['schedule']}</td>
+                <td>{_format_val(obj['min_in_temp'])}</td>
+                <td>{_format_val(obj['max_in_temp'])}</td>
+                <td>{_format_val(obj['min_out_temp'])}</td>
+                <td>{_format_val(obj['max_out_temp'])}</td>
+            </tr>
+            """
+
+    if not rows_html:
+        return ""
+
+    return f"""
+    <div class="card">
+        <div class="card-header">Natural Ventilation Parameters</div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Zone</th>
+                        <th>Object Name</th>
+                        <th>Opening Area [m2]</th>
+                        <th>Schedule</th>
+                        <th>Min Indoor Temp [C]</th>
+                        <th>Max Indoor Temp [C]</th>
+                        <th>Min Outdoor Temp [C]</th>
+                        <th>Max Outdoor Temp [C]</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    """
+
+
 def generate_reports(
     zone_data: list[dict],
     output_base_path: str,
@@ -262,6 +317,7 @@ def generate_reports(
     construction_data: list[dict] | None = None,
     process_data: list[dict] | None = None,
     schedule_data: list[dict] | None = None,
+    natural_vent_data: dict[str, list[dict]] | None = None,
 ):
 
     """Generates CSV, Markdown, and HTML reports with zone deduplication.
@@ -291,6 +347,7 @@ def generate_reports(
         "Infiltration [m3/s.m2 facade]": "infiltration",
         "Ventilation [m3/s.person]": "vent_person",
         "Ventilation [m3/s.m2]": "vent_area",
+        "Ventilation [ACH]": "vent_ach",
         "Htg Setpoint [C]": "htg_sp",
         "Clg Setpoint [C]": "clg_sp",
     }
@@ -334,7 +391,8 @@ def generate_reports(
             html_key_map[h] = key_map[h]
         f.write(generate_html_content(
             final_rows, headers, html_key_map, viz_b64, 
-            final_hvac_rows, construction_data, process_data, schedule_data
+            final_hvac_rows, construction_data, process_data, schedule_data,
+            natural_vent_data
         ))
 
     print(f"Report generated:\n  - {html_path}")
@@ -349,6 +407,7 @@ def generate_html_content(
     construction_data: list[dict] | None = None,
     process_data: list[dict] | None = None,
     schedule_data: list[dict] | None = None,
+    natural_vent_data: dict[str, list[dict]] | None = None,
 ) -> str:
     """Creates a premium HTML document with a styled table."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -565,6 +624,8 @@ def generate_html_content(
         {_build_schedule_html(schedule_data) if schedule_data else ""}
 
         {_build_process_loads_html(process_data) if process_data else ""}
+        
+        {_build_natural_ventilation_html(natural_vent_data) if natural_vent_data else ""}
 
         {_build_construction_html(construction_data) if construction_data else ""}
     </div>

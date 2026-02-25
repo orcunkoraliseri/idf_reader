@@ -93,7 +93,8 @@ def get_zone_geometry(
         zone_geo[name] = {
             "floor_area": floor_area,
             "facade_area": 0.0,
-            "volume": volume,
+            "exterior_roof_area": 0.0,
+            "volume": 0.0,
             "multiplier": multiplier,
         }
 
@@ -128,7 +129,23 @@ def get_zone_geometry(
             vertices = [
                 verts_flat[i : i + 3] for i in range(0, num_vertices * 3, 3)
             ]
-            surf_area = calculate_polygon_area(vertices)
+            
+            # 1. Calculate Area and Normal-based Volume Pyramid
+            # Area Calculation
+            v_arr = [np.array(v) for v in vertices]
+            face_area_vec = np.zeros(3)
+            for i in range(len(v_arr)):
+                v1 = v_arr[i]
+                v2 = v_arr[(i + 1) % len(v_arr)]
+                face_area_vec += np.cross(v1, v2)
+            
+            surf_area = 0.5 * np.linalg.norm(face_area_vec)
+            
+            # Volume Calculation (Signed pyramid volume from origin to face)
+            # Vol = (1/6) * sum( dot(v_i, v_next x v_next_next) ) is for specific triangle meshes.
+            # For general polygon: Vol = (1/3) * dot(any_vertex, face_area_vector_sum_half)
+            # Note: face_area_vec is 2x the actual vector area
+            zone_geo[zone_name]["volume"] += (1.0/6.0) * np.dot(v_arr[0], face_area_vec)
 
             if surf_type == "floor":
                 if "sum_floor" not in zone_geo[zone_name]:
@@ -137,9 +154,16 @@ def get_zone_geometry(
 
             if surf_type == "wall" and "outdoors" in boundary:
                 zone_geo[zone_name]["facade_area"] += surf_area
+            
+            if surf_type in ["roof", "roofceiling"] and "outdoors" in boundary:
+                zone_geo[zone_name]["exterior_roof_area"] += surf_area
 
         except (ValueError, IndexError):
             continue
+
+    # Finalize floor_area and volume
+    for name, data in zone_geo.items():
+        data["volume"] = abs(data["volume"])
 
     # Finalize floor_area if it was autocalculated
     for name, data in zone_geo.items():

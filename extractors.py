@@ -158,6 +158,34 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, float]:
             results[zone_name] += (peak_m3s * 3600000) / area
         except (ValueError, IndexError):
             continue
+
+    # 2. Add support for WATERHEATER:MIXED (used in MidRise Apartment)
+    for obj in idf_data.get("WATERHEATER:MIXED", []):
+        if len(obj) < 28:
+            continue
+        
+        # Mapping via Ambient Temperature Zone Name (common in residential)
+        # Field 20 (index 19) is Indicator. Field 22 (index 21) is Zone Name.
+        zone_name = ""
+        if obj[19].lower() == "zone":
+            zone_name = obj[21]
+        
+        if not zone_name or zone_name not in zone_geo:
+            continue
+
+        area = zone_geo[zone_name]["floor_area"]
+        if area <= 0:
+            continue
+
+        try:
+            # field 28: Peak Use Flow Rate {m3/s} (index 27)
+            peak_m3s = float(obj[27])
+            if peak_m3s > 0:
+                # Normalize to L/h.m2: m3/s * 3600000 / area
+                results[zone_name] += (peak_m3s * 3600000) / area
+        except (ValueError, IndexError):
+            continue
+
     return results
 
 
@@ -173,11 +201,18 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
 
         method = obj[3].lower()
         facade_area = zone_geo[zone_name]["facade_area"]
+        exterior_roof = zone_geo[zone_name].get("exterior_roof_area", 0.0)
         floor_area = zone_geo[zone_name]["floor_area"]
         volume = zone_geo[zone_name]["volume"]
 
-        # Use floor_area if facade_area is 0 (fallback)
-        norm_area = facade_area if facade_area > 0 else floor_area
+        # Total exterior surface area (Face + Roof)
+        exterior_area = facade_area + exterior_roof
+        
+        # Norm area logic: Prefer exterior area, fallback to floor area if 
+        # exterior area is 0 or disproportionately small (< 5% of floor area)
+        norm_area = exterior_area
+        if exterior_area <= 0 or (floor_area > 0 and exterior_area < 0.05 * floor_area):
+            norm_area = floor_area
         if norm_area <= 0:
             continue
 
@@ -205,7 +240,10 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
         if zone_name not in zone_geo:
             continue
         facade_area = zone_geo[zone_name]["facade_area"]
-        norm_area = facade_area if facade_area > 0 else zone_geo[zone_name]["floor_area"]
+        exterior_roof = zone_geo[zone_name].get("exterior_roof_area", 0.0)
+        exterior_area = facade_area + exterior_roof
+        
+        norm_area = exterior_area if exterior_area > 0 else zone_geo[zone_name]["floor_area"]
         if norm_area <= 0:
             continue
         try:
@@ -221,10 +259,14 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
     # Map AirflowNetwork Leakage Components -> Effective Leakage Area
     afn_ela = {}
     for obj in idf_data.get("AIRFLOWNETWORK:MULTIZONE:SURFACE:EFFECTIVELEAKAGEAREA", []):
-        if len(obj) < 3:
+        if len(obj) < 2:
+            continue
+        # Skip intentional vents (e.g. ATTICVENT, CRAWLVENT) which inflate infiltration
+        if "VENT" in obj[0].upper():
             continue
         try:
-            ela_m2 = float(obj[2])
+            # Field 2 is ELA. Field 3 is Discharge Coefficient.
+            ela_m2 = float(obj[1])
             # If ELA is > 1.0, it's likely in cm2
             if ela_m2 > 1.0:
                 ela_m2 /= 10000.0
@@ -267,7 +309,19 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
             continue
 
         facade_area = zone_geo[zone_name]["facade_area"]
-        norm_area = facade_area if facade_area > 0 else zone_geo[zone_name]["floor_area"]
+        exterior_roof = zone_geo[zone_name].get("exterior_roof_area", 0.0)
+        floor_area = zone_geo[zone_name]["floor_area"]
+        
+        # Total exterior surface area (Face + Roof)
+        exterior_area = facade_area + exterior_roof
+        
+        # Norm area logic: Prefer exterior area, but fallback to floor area if 
+        # exterior area is 0 or disproportionately small (< 5% of floor area)
+        # to avoid massive inflation of values in basement/attic zones.
+        norm_area = exterior_area
+        if exterior_area <= 0 or (floor_area > 0 and exterior_area < 0.05 * floor_area):
+            norm_area = floor_area
+            
         if norm_area <= 0:
             continue
 
@@ -278,15 +332,18 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
 
 
 def extract_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, float]]:
-    """Extracts ventilation (m3/s per person AND m3/s per m2)."""
-    results = {name: {"per_person": 0.0, "per_area": 0.0} for name in zone_geo}
+    """Extracts ventilation (m3/s per person, m3/s per m2, and ACH)."""
+    results = {name: {"per_person": 0.0, "per_area": 0.0, "ach": 0.0} for name in zone_geo}
     for obj in idf_data.get("DESIGNSPECIFICATION:OUTDOORAIR", []):
-        name = obj[0]
-        # Heuristic: Match "SZ DSOA ZoneName"
+        name = obj[0].upper()
+        # Robust Heuristic: Clean names for matching (remove spaces, underscores, and SZ DSOA)
+        search_name = name.replace("_", "").replace(" ", "").replace("SZDSOA", "")
+        
         matched_zone = None
         best_len = 0
         for zn in zone_geo:
-            if zn.upper() in name.upper() and len(zn) > best_len:
+            clean_zn = zn.upper().replace("_", "").replace(" ", "")
+            if (clean_zn in search_name or search_name in clean_zn) and len(zn) > best_len:
                 matched_zone = zn
                 best_len = len(zn)
 
@@ -309,29 +366,96 @@ def extract_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
         except (ValueError, IndexError):
             continue
 
-    # Also check ZoneVentilation:DesignFlowRate for mechanical ventilation
+    # 2. Add support for ZONEVENTILATION:DESIGNFLOWRATE
     for obj in idf_data.get("ZONEVENTILATION:DESIGNFLOWRATE", []):
-        if len(obj) < 5:
+        if len(obj) < 4:
             continue
         zone_name = obj[1]
         if zone_name not in zone_geo:
             continue
-        
-        method = obj[3].lower()
-        area = zone_geo[zone_name]["floor_area"]
-        if area <= 0:
-            continue
             
+        method = obj[3].upper()
         try:
-            if method in ["flow/zone", "level"]:
-                results[zone_name]["per_area"] += float(obj[4]) / area
-            elif method == "flow/area":
-                results[zone_name]["per_area"] += float(obj[5])
-            elif method in ["flow/person", "perperson"]:
-                results[zone_name]["per_person"] += float(obj[6])
+            if method == "FLOW/ZONE" and len(obj) > 4 and obj[4]:
+                flow_zone = float(obj[4])
+                area = zone_geo[zone_name]["floor_area"]
+                if area > 0:
+                    results[zone_name]["per_area"] += flow_zone / area
+            elif method == "FLOW/PERSON" and len(obj) > 5 and obj[5]:
+                results[zone_name]["per_person"] += float(obj[5])
+            elif method == "FLOW/AREA" and len(obj) > 6 and obj[6]:
+                results[zone_name]["per_area"] += float(obj[6])
+            elif method == "AIRCHANGES/HOUR" and len(obj) > 7 and obj[7]:
+                results[zone_name]["ach"] += float(obj[7])
         except (ValueError, IndexError):
             continue
+
+    # 3. Add support for AIRFLOWNETWORK Natural Ventilation (Intentional Vents)
+    # Map AirflowNetwork Leakage Components -> ELA (only for Vents)
+    afn_vent_ela = {}
+    for obj in idf_data.get("AIRFLOWNETWORK:MULTIZONE:SURFACE:EFFECTIVELEAKAGEAREA", []):
+        if len(obj) < 2:
+            continue
+        # Intentional vents (e.g. ATTICVENT, CRAWLVENT)
+        if "VENT" in obj[0].upper():
+            try:
+                ela_m2 = float(obj[1])
+                if ela_m2 > 1.0:
+                    ela_m2 /= 10000.0
+                afn_vent_ela[obj[0].upper()] = ela_m2
+            except (ValueError, IndexError):
+                continue
+
+    if afn_vent_ela:
+        # BuildingSurface:Detailed map: Surface Name -> Zone Name
+        surf_to_zone = {}
+        for obj in idf_data.get("BUILDINGSURFACE:DETAILED", []):
+            if len(obj) > 4:
+                surf_to_zone[obj[0].upper()] = obj[3]
+                if obj[4].strip().lower() in ["outdoors", "ground", "surface", "zone", "foundation"]:
+                    surf_to_zone[obj[0].upper()] = obj[3]
+
+        # Process AirflowNetwork Surfaces to assign vent flow to zones
+        for obj in idf_data.get("AIRFLOWNETWORK:MULTIZONE:SURFACE", []):
+            if len(obj) < 2:
+                continue
+            surf_name = obj[0].upper()
+            leakage_comp_name = obj[1].upper()
             
+            zone_name = surf_to_zone.get(surf_name)
+            if not zone_name or zone_name not in zone_geo:
+                # Fallback substring match
+                for zn in zone_geo:
+                    if zn.upper() in surf_name:
+                        zone_name = zn
+                        break
+            
+            if not zone_name or zone_name not in zone_geo:
+                continue
+
+            ela_m2 = afn_vent_ela.get(leakage_comp_name, 0.0)
+            if ela_m2 <= 0:
+                continue
+
+            # For intentional vents in unconditioned spaces, calculate ACH
+            volume = zone_geo[zone_name].get("volume", 0.0)
+            if volume > 0:
+                # ACH = (m3/s at 4Pa * 3600) / volume
+                results[zone_name]["ach"] += (ela_m2 * 2.58 * 3600) / volume
+            else:
+                # Fallback to per_area if volume is missing (e.g. old IDFs)
+                facade_area = zone_geo[zone_name]["facade_area"]
+                exterior_roof = zone_geo[zone_name].get("exterior_roof_area", 0.0)
+                floor_area = zone_geo[zone_name]["floor_area"]
+                
+                exterior_area = facade_area + exterior_roof
+                norm_area = exterior_area
+                if exterior_area <= 0 or (floor_area > 0 and exterior_area < 0.05 * floor_area):
+                    norm_area = floor_area
+                
+                if norm_area > 0:
+                    results[zone_name]["per_area"] += (ela_m2 * 2.58) / norm_area
+
     return results
 
 
@@ -362,7 +486,7 @@ def extract_thermostats(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
 
             if control_type == "THERMOSTATSETPOINT:DUALSETPOINT":
                 for sp in idf_data.get("THERMOSTATSETPOINT:DUALSETPOINT", []):
-                    if sp[0] == control_name:
+                    if sp[0].upper() == control_name.upper():
                         h = resolve_schedule_value(idf_data, sp[1])
                         c = resolve_schedule_value(idf_data, sp[2])
                         if h is not None:
@@ -371,13 +495,13 @@ def extract_thermostats(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
                             results[zn]["cooling"] = c
             elif control_type == "THERMOSTATSETPOINT:SINGLEHEATING":
                 for sp in idf_data.get("THERMOSTATSETPOINT:SINGLEHEATING", []):
-                    if sp[0] == control_name:
+                    if sp[0].upper() == control_name.upper():
                         h = resolve_schedule_value(idf_data, sp[1])
                         if h is not None:
                             results[zn]["heating"] = h
             elif control_type == "THERMOSTATSETPOINT:SINGLECOOLING":
                 for sp in idf_data.get("THERMOSTATSETPOINT:SINGLECOOLING", []):
-                    if sp[0] == control_name:
+                    if sp[0].upper() == control_name.upper():
                         c = resolve_schedule_value(idf_data, sp[1])
                         if c is not None:
                             results[zn]["cooling"] = c
@@ -670,5 +794,59 @@ def extract_hvac_systems(idf_data: dict, zone_names: list[str]) -> dict[str, dic
                 dcv = mv[2] if len(mv) > 2 else "No"
 
         results[z] = {"template": template, "dcv": dcv, "economizer": economizer}
+    return results
+
+
+def extract_natural_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, list[dict]]:
+    """Extracts natural ventilation parameters from ZoneVentilation:WindandStackOpenArea."""
+    results = {name: [] for name in zone_geo}
+    
+    # Target Parameters:
+    # Field 1: Zone Name
+    # Field 2: Opening Area [m2]
+    # Field 3: Ventilation Schedule
+    # Field 8: Minimum Indoor Temp [C] (index 8)
+    # Field 10: Maximum Indoor Temp [C] (index 10)
+    # Field 14: Minimum Outdoor Temp [C] (index 14)
+    # Field 16: Maximum Outdoor Temp [C] (index 16)
+    
+    for obj in idf_data.get("ZONEVENTILATION:WINDANDSTACKOPENAREA", []):
+        if len(obj) < 2:
+            continue
+            
+        zone_name = obj[1]
+        if zone_name not in zone_geo:
+            # Try to match the zone name robustly if it doesn't match exactly
+            matched = False
+            for zn in zone_geo:
+                if zn.upper() == zone_name.upper():
+                    zone_name = zn
+                    matched = True
+                    break
+            if not matched:
+                continue
+
+        params = {
+            "name": obj[0],
+            "opening_area": 0.0,
+            "schedule": "",
+            "min_in_temp": -100.0,
+            "max_in_temp": 100.0,
+            "min_out_temp": -100.0,
+            "max_out_temp": 100.0,
+        }
+        
+        try:
+            if len(obj) > 2 and obj[2]: params["opening_area"] = float(obj[2])
+            if len(obj) > 3: params["schedule"] = obj[3]
+            if len(obj) > 8 and obj[8]: params["min_in_temp"] = float(obj[8])
+            if len(obj) > 10 and obj[10]: params["max_in_temp"] = float(obj[10])
+            if len(obj) > 14 and obj[14]: params["min_out_temp"] = float(obj[14])
+            if len(obj) > 16 and obj[16]: params["max_out_temp"] = float(obj[16])
+        except (ValueError, IndexError):
+            pass
+            
+        results[zone_name].append(params)
+        
     return results
 

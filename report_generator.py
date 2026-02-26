@@ -392,13 +392,67 @@ def generate_reports(
         html_key_map = {"Zone": "name", "Count": "Count"}
         for h in data_headers:
             html_key_map[h] = key_map[h]
+            
+        area_summary_html = _build_area_summary_html(zone_data, hvac_data)
+        
         f.write(generate_html_content(
             final_rows, headers, html_key_map, viz_b64, 
             final_hvac_rows, construction_data, process_data, schedule_data,
-            natural_vent_data
+            natural_vent_data, area_summary_html=area_summary_html
         ))
 
     print(f"Report generated:\n  - {html_path}")
+
+
+def _build_area_summary_html(zone_data: list[dict], hvac_data: dict[str, dict[str, str]] | None) -> str:
+    """Calculates and creates a summary table for floor areas."""
+    if not zone_data:
+        return ""
+
+    total_area = 0.0
+    conditioned_area = 0.0
+    unconditioned_area = 0.0
+
+    # Ensure hvac_data is at least an empty dict for safe `.get()`
+    hvac_lookup = hvac_data if hvac_data else {}
+
+    for zone in zone_data:
+        area = zone.get("floor_area", 0.0)
+        total_area += area
+        
+        # Determine if unconditioned based on HVAC data
+        z_name = zone.get("name", "")
+        # The template key is nested under the zone name
+        template = hvac_lookup.get(z_name, {}).get("template", "Unconditioned")
+        
+        if template.lower() == "unconditioned":
+            unconditioned_area += area
+        else:
+            conditioned_area += area
+
+    return f"""
+    <div class="card">
+        <div class="card-header">Floor Area Summary</div>
+            <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Total Built Area [m2]</th>
+                        <th>Total Conditioned Area [m2]</th>
+                        <th>Total Unconditioned Area [m2]</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{_format_val(total_area, 4)}</td>
+                        <td>{_format_val(conditioned_area, 4)}</td>
+                        <td>{_format_val(unconditioned_area, 4)}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    """
 
 
 def generate_html_content(
@@ -411,6 +465,7 @@ def generate_html_content(
     process_data: list[dict] | None = None,
     schedule_data: list[dict] | None = None,
     natural_vent_data: dict[str, list[dict]] | None = None,
+    area_summary_html: str = "",
 ) -> str:
     """Creates a premium HTML document with a styled table."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -609,6 +664,8 @@ def generate_html_content(
         <div class="metadata">Generated on: {timestamp}</div>
         
         {viz_html}
+
+        {area_summary_html}
 
         <div class="card">
             <div class="card-header">Zone Metadata Detail</div>

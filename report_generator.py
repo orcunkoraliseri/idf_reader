@@ -10,11 +10,12 @@ a polished HTML report, including summary tables and building models.
 import datetime
 
 
-def _format_val(val: any) -> str:
-    """Intelligently format a value: round to 4 decimals and strip trailing zeros.
+def _format_val(val: any, precision: int = 4) -> str:
+    """Intelligently format a value: round to specified decimals and strip trailing zeros.
 
     Args:
         val: The value to format (int, float, or other).
+        precision: Number of decimal places.
 
     Returns:
         A cleaned string representation.
@@ -22,8 +23,9 @@ def _format_val(val: any) -> str:
     if not isinstance(val, (int, float)):
         return str(val)
 
-    # Use 4 decimals max, then strip trailing zeros and potential trailing dot
-    s = f"{val:.4f}"
+    # Use precision decimals max, then strip trailing zeros and potential trailing dot
+    format_str = f"{{:.{precision}f}}"
+    s = format_str.format(val)
     if "." in s:
         s = s.rstrip("0").rstrip(".")
     return s if s else "0"
@@ -344,6 +346,7 @@ def generate_reports(
         "Electric Equipment [W/m2]": "electric",
         "Gas Equipment [W/m2]": "gas",
         "SHW [L/h.m2]": "water",
+        "SHW Target Temp [C]": "water_temp",
         "Infiltration [m3/s.m2 facade]": "infiltration",
         "Ventilation [m3/s.person]": "vent_person",
         "Ventilation [m3/s.m2]": "vent_area",
@@ -434,7 +437,9 @@ def generate_html_content(
         cells_html = ""
         for h in headers:
             val = zone.get(key_map[h], 0)
-            formatted_val = _format_val(val)
+            # Use 5 decimals for Infiltration and Ventilation, otherwise 4
+            precision = 5 if ("Infiltration" in h or "Ventilation" in h) else 4
+            formatted_val = _format_val(val, precision)
             cls = ' class="wrap-txt"' if h in ["Zone", "Thermal Zone"] else ""
             cells_html += f"<td{cls}>{formatted_val}</td>"
         rows_html += f"<tr>{cells_html}</tr>"

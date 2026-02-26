@@ -39,7 +39,7 @@ def find_idf_files(base_dir: str) -> list[tuple[str, str]]:
 
     for root, _, files in os.walk(base_dir):
         for file in files:
-            if file.lower().endswith(".idf") and file.lower() != "construction_baseline.idf":
+            if file.lower().endswith(".idf"):
                 full_path = os.path.join(root, file)
                 rel_path = os.path.relpath(full_path, base_dir)
                 idf_files.append((rel_path, full_path))
@@ -111,7 +111,7 @@ def process_file(idf_path: str, output_dir: str) -> None:
 
     people = extract_people(idf_data, zone_geo)
     lights = extract_loads(idf_data, zone_geo, "LIGHTS")
-    electric = extract_loads(idf_data, zone_geo, "ELECTRICEQUIPMENT")
+    electric = extract_loads(idf_data, zone_geo, "ELECTRICEQUIPMENT", exclude_subcat_filter="elevator")
     gas = extract_loads(idf_data, zone_geo, "GASEQUIPMENT")
     water = extract_water_use(idf_data, zone_geo)
     infiltration = extract_infiltration(idf_data, zone_geo)
@@ -143,7 +143,8 @@ def process_file(idf_path: str, output_dir: str) -> None:
                 "lights": lights.get(zone_name, 0.0),
                 "electric": electric.get(zone_name, 0.0),
                 "gas": gas.get(zone_name, 0.0),
-                "water": water.get(zone_name, 0.0),
+                "water": water.get(zone_name, {}).get("peak_lh_m2", 0.0),
+                "water_temp": water.get(zone_name, {}).get("target_temp_c", 0.0),
                 "infiltration": infiltration.get(zone_name, 0.0),
                 "vent_person": ventilation.get(zone_name, {}).get("per_person", 0.0),
                 "vent_area": ventilation.get(zone_name, {}).get("per_area", 0.0),
@@ -156,7 +157,7 @@ def process_file(idf_path: str, output_dir: str) -> None:
 
     # Extract baseline constructions
     construction_data = None
-    baseline_path = os.path.join(os.path.dirname(__file__), "Content", "construction", "construction_baseline.idf")
+    baseline_path = os.path.join(os.path.dirname(__file__), "Templates", "construction", "construction_baseline.idf")
     if os.path.exists(baseline_path):
         try:
             construction_data = extract_baseline_constructions(baseline_path)

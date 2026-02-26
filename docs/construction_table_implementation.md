@@ -97,7 +97,7 @@ New module (keeps `extractors.py` focused on zone loads):
 
 ### Main Entrypoint
 #### [MODIFY] [main.py](file:///Users/orcunkoraliseri/Desktop/idf_reader/main.py)
-- Resolve path to `Content/construction/construction_baseline.idf`.
+- Resolve path to `Templates/construction/construction_baseline.idf`.
 - Call `extract_baseline_constructions(...)` once.
 - Pass result into `generate_reports(...)`.
 

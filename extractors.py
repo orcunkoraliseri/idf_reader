@@ -78,7 +78,7 @@ def extract_people(idf_data: dict, zone_geo: dict) -> dict[str, float]:
 
 
 def extract_loads(
-    idf_data: dict, zone_geo: dict, obj_key: str, subcat_filter: str | None = None
+    idf_data: dict, zone_geo: dict, obj_key: str, subcat_filter: str | None = None, exclude_subcat_filter: str | None = None
 ) -> dict[str, float]:
     """Helper to extract Lights or Equipment loads (W/m2)."""
     results = {name: 0.0 for name in zone_geo}
@@ -89,10 +89,12 @@ def extract_loads(
         if zone_name not in zone_geo:
             continue
 
-        # Optional filter by subcategory (for process loads)
-        if subcat_filter:
+        # Optional filters by subcategory
+        if subcat_filter or exclude_subcat_filter:
             subcat = obj[-1].lower() if obj else ""
-            if subcat_filter not in subcat:
+            if subcat_filter and subcat_filter not in subcat:
+                continue
+            if exclude_subcat_filter and exclude_subcat_filter in subcat:
                 continue
 
         method = obj[3].lower()
@@ -115,9 +117,9 @@ def extract_loads(
     return results
 
 
-def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, float]:
-    """Extracts SHW usage (L/h.m2)."""
-    results = {name: 0.0 for name in zone_geo}
+def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, float]]:
+    """Extracts SHW usage (L/h.m2) and Target Temperature (C)."""
+    results = {name: {"peak_lh_m2": 0.0, "target_temp_c": 0.0} for name in zone_geo}
     for obj in idf_data.get("WATERUSE:EQUIPMENT", []):
         if len(obj) < 3:
             continue
@@ -155,7 +157,11 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, float]:
             # field 3: Peak Flow Rate {m3/s} (index 2)
             peak_m3s = float(obj[2])
             # Normalize to L/h.m2: m3/s * 3600000 / area
-            results[zone_name] += (peak_m3s * 3600000) / area
+            results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
+            
+            # field 5: Target Temperature Schedule Name (index 4)
+            if len(obj) > 4 and obj[4]:
+                results[zone_name]["target_temp_c"] = resolve_schedule_value(idf_data, obj[4])
         except (ValueError, IndexError):
             continue
 
@@ -182,7 +188,11 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, float]:
             peak_m3s = float(obj[27])
             if peak_m3s > 0:
                 # Normalize to L/h.m2: m3/s * 3600000 / area
-                results[zone_name] += (peak_m3s * 3600000) / area
+                results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
+            
+            # field 3: Setpoint Temperature Schedule Name (index 2)
+            if len(obj) > 2 and obj[2]:
+                results[zone_name]["target_temp_c"] = resolve_schedule_value(idf_data, obj[2])
         except (ValueError, IndexError):
             continue
 

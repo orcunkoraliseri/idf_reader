@@ -66,6 +66,8 @@ def extract_zone_schedules(idf_data: dict) -> list[dict[str, Any]]:
     # 5. Infiltration - Zone idx 1, Sched idx 2
     for obj in idf_data.get("ZONEINFILTRATION:DESIGNFLOWRATE", []):
         if len(obj) > 2:
+            if "door" in obj[0].lower():
+                continue
             zone, sched = obj[1], obj[2]
             if zone and sched:
                 mappings["Infiltration"][sched].add(zone)

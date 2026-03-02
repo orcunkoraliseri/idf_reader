@@ -1,0 +1,11 @@
+# Ignore heavy simulation outputs
+**/sim_results/
+**/outputs/
+**/*.csv
+**/*.sql
+
+# Standard development bloat
+node_modules/
+__pycache__/
+.git/
+.DS_Store

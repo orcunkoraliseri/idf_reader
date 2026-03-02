@@ -32,90 +32,14 @@ from geometry import get_zone_geometry
 # containing multiple keywords is assigned the best match.
 # ---------------------------------------------------------------------------
 _ASHRAE_TYPE_KEYWORDS: dict[str, list[str]] = {
-    # ── Residential ────────────────────────────────────────────────────────
-    "Single Family Detached": [
-        "living_unit", "attic_unit", "crawlspace", "house",
-    ],
-    "Midrise Apartment": [
-        # Core apartment zone names from the ASHRAE 90.1 MidRise prototype
-        "apartment",
-        # Corridors are an integral part of the MidRise Apartment prototype
-        # (G Corridor, M Corridor, T Corridor)
-        " corridor",   # space before avoids matching "corridor_pod" (school)
-        # Ground-floor Office zone present in each apartment building instance
-        # (zone name is simply e.g. "16_6_Office")
-        "_office",
-    ],
-    "Highrise Apartment": [
-        "highrise",
-    ],
-    # ── Schools ─────────────────────────────────────────────────────────────
+    # ── Schools (Most specific) ─────────────────────────────────────────────
     "Secondary School": [
-        # Unique Secondary School zone fragments
-        "auditorium", "aux_gym",
-        # Shared with Primary but present in Secondary too
-        "corner_class", "mult_class", "corridor_pod",
+        "auditorium", "aux_gym", "corner_class", "mult_class", "corridor_pod",
         "cafeteria", "kitchen_zn", "library_media", "lobby_zn",
-        "main_corridor", "mech_zn", "bathrooms",
-        # Secondary-specific suffix pattern
-        "_flr_2",  # secondary school has FLR_2 zones; primary only has FLR_1
+        "main_corridor", "mech_zn", "bathrooms", "_flr_2",
     ],
     "Primary School": [
-        # Primary-only zone fragments
         "computer_class", "bath_zn",
-    ],
-    # ── Offices ─────────────────────────────────────────────────────────────
-    "Large Office": [
-        # Large office has basement, data centres, and three-tier core/perim
-        "core_bottom", "core_mid", "core_top",
-        "perimeter_bot", "perimeter_mid", "perimeter_top",
-        "datacenter", "groundfloor_plenum", "midfloor_plenum",
-        "topfloor_plenum",
-    ],
-    "Medium Office": [
-        # Medium office shares core/perimeter names but has firstfloor_plenum
-        "firstfloor_plenum",
-    ],
-    "Small Office": [
-        # Small office uses Core_ZN and Perimeter_ZN (no tier suffix)
-        "core_zn", "perimeter_zn",
-    ],
-    # ── Hotels ──────────────────────────────────────────────────────────────
-    "Large Hotel": [
-        # Large Hotel-specific zone names
-        "banquet", "cafe_flr", "dining_flr", "kitchen_flr",
-        "laundry_flr", "lobby_flr", "mech_flr", "storage_flr",
-        "room_1_flr", "room_2_flr", "room_3_mult", "room_4_mult",
-        "room_5_flr", "room_6_flr",
-        "retail_1_flr", "retail_2_flr",
-        "corridor_flr",
-    ],
-    "Small Hotel": [
-        "guestroom", "corridorflr", "elevatorcore",
-        "employeelounge", "exercisecenter", "frontlounge",
-        "frontoffice", "frontstairs", "frontstorage",
-        "laundryroom", "mechanicalroom", "meetingroom",
-        "rearstairs", "rearstorage", "restroomflr",
-    ],
-    # ── Restaurants ─────────────────────────────────────────────────────────
-    "Quick Service Restaurant": [
-        # Fast-food prototype: Dining, Kitchen, attic
-        "dining", "kitchen", "attic",
-    ],
-    "Full Service Restaurant": [
-        "full_service",
-    ],
-    # ── Retail ──────────────────────────────────────────────────────────────
-    "Supermarket": [
-        "bakery", "deli", "drystorage", "produce", "sales", "grocery",
-    ],
-    "Standalone Retail": [
-        # Standalone Retail prototype zone names
-        "back_space", "core_retail", "front_entry",
-        "front_retail", "point_of_sale",
-    ],
-    "Strip Mall": [
-        "lgstore", "smstore",
     ],
     # ── Healthcare ──────────────────────────────────────────────────────────
     "Hospital": [
@@ -127,7 +51,64 @@ _ASHRAE_TYPE_KEYWORDS: dict[str, list[str]] = {
         "sterile", "anesthesia", "procedure_room",
         "ne stair", "nw elevator", "nw stair", "sw stair",
     ],
-    # ── Warehouse ───────────────────────────────────────────────────────────
+    # ── Residential Housing (Very specific zone names like living_unit) ──────
+    "Single Family Detached": [
+        "living_unit", "attic_unit", "crawlspace", "house",
+    ],
+    "Highrise Apartment": [
+        "highrise",
+    ],
+    # ── Specialized Retail / Groceries ──────────────────────────────────────
+    "Supermarket": [
+        "bakery", "deli", "drystorage", "produce", "sales", "grocery",
+    ],
+    # ── Restaurants ─────────────────────────────────────────────────────────
+    "Quick Service Restaurant": [
+        "dining", "kitchen", "attic",
+    ],
+    "Full Service Restaurant": [
+        "full_service",
+    ],
+    # ── Hotels ──────────────────────────────────────────────────────────────
+    "Large Hotel": [
+        "banquet", "cafe_flr", "dining_flr", "kitchen_flr",
+        "laundry_flr", "lobby_flr", "mech_flr", "storage_flr",
+        "room_1_flr", "room_2_flr", "room_3_mult", "room_4_mult",
+        "room_5_flr", "room_6_flr", "retail_1_flr", "retail_2_flr",
+        "corridor_flr",
+    ],
+    "Small Hotel": [
+        "guestroom", "corridorflr", "elevatorcore",
+        "employeelounge", "exercisecenter", "frontlounge",
+        "frontoffice", "frontstairs", "frontstorage",
+        "laundryroom", "mechanicalroom", "meetingroom",
+        "rearstairs", "rearstorage", "restroomflr",
+    ],
+    # ── Midrise Apartment (Greedy keywords like _office and corridor) ───────
+    "Midrise Apartment": [
+        "apartment", " corridor", "_office",
+    ],
+    # ── Offices ─────────────────────────────────────────────────────────────
+    "Large Office": [
+        "core_bottom", "core_mid", "core_top",
+        "perimeter_bot", "perimeter_mid", "perimeter_top",
+        "datacenter", "groundfloor_plenum", "midfloor_plenum",
+        "topfloor_plenum",
+    ],
+    "Medium Office": [
+        "firstfloor_plenum",
+    ],
+    "Small Office": [
+        "core_zn", "perimeter_zn",
+    ],
+    # ── Other Retail / Warehouse ────────────────────────────────────────────
+    "Standalone Retail": [
+        "back_space", "core_retail", "front_entry",
+        "front_retail", "point_of_sale",
+    ],
+    "Strip Mall": [
+        "lgstore", "smstore",
+    ],
     "Warehouse": [
         "fine_storage", "bulk_storage", "zone1 office",
         "zone2 fine", "zone3 bulk",
@@ -268,7 +249,12 @@ def parse_neighbourhood(idf_path: str) -> NeighbourhoodSummary:
     zone_geo = None
 
     for prefix, types in prefix_types.items():
-        non_unknown = [t for t in types if t != "Unknown"]
+        # Sort the matched types by their definition order in _ASHRAE_TYPE_KEYWORDS
+        ordered_keys = list(_ASHRAE_TYPE_KEYWORDS.keys())
+        non_unknown = sorted(
+            [t for t in types if t != "Unknown"],
+            key=lambda t: ordered_keys.index(t) if t in ordered_keys else 999
+        )
         canonical_type = non_unknown[0] if non_unknown else "Unknown"
 
         # Area-based restaurant disambiguation

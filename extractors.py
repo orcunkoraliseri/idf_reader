@@ -45,6 +45,39 @@ def resolve_schedule_value(idf_data: dict, schedule_name: str) -> float | None:
     return None
 
 
+def get_schedule_max_value(idf_data: dict, schedule_name: str) -> float:
+    """Attempts to find the maximum numeric value for a schedule."""
+    if not schedule_name:
+        return 1.0
+    schedule_name_upper = schedule_name.upper()
+
+    # Check Schedule:Constant
+    for sch in idf_data.get("SCHEDULE:CONSTANT", []):
+        if sch[0].upper() == schedule_name_upper:
+            try:
+                return float(sch[2])
+            except (ValueError, IndexError):
+                pass
+
+    # Check Schedule:Compact
+    max_val = 0.0
+    found = False
+    for sch in idf_data.get("SCHEDULE:COMPACT", []):
+        if sch[0].upper() == schedule_name_upper:
+            for field in sch[2:]:
+                try:
+                    val = float(str(field).strip())
+                    max_val = max(max_val, val)
+                    found = True
+                except ValueError:
+                    pass
+            if found:
+                return max_val
+
+    # Default to 1.0 if not found
+    return 1.0
+
+
 def extract_people(idf_data: dict, zone_geo: dict) -> dict[str, float]:
     """Extracts occupancy density (people/m2)."""
     results = {name: 0.0 for name in zone_geo}
@@ -156,8 +189,14 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
         try:
             # field 3: Peak Flow Rate {m3/s} (index 2)
             peak_m3s = float(obj[2])
+            
+            # field 4: Flow Rate Fraction Schedule Name (index 3)
+            sch_fraction = 1.0
+            if len(obj) > 3 and obj[3]:
+                sch_fraction = get_schedule_max_value(idf_data, obj[3])
+                
             # Normalize to L/h.m2: m3/s * 3600000 / area
-            results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
+            results[zone_name]["peak_lh_m2"] += (peak_m3s * sch_fraction * 3600000) / area
             
             # field 5: Target Temperature Schedule Name (index 4)
             if len(obj) > 4 and obj[4]:
@@ -187,12 +226,19 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
             # field 28: Peak Use Flow Rate {m3/s} (index 27)
             peak_m3s = float(obj[27])
             if peak_m3s > 0:
+                sch_fraction = 1.0
+                # field 29: Use Flow Rate Fraction Schedule Name (index 28)
+                if len(obj) > 28 and obj[28]:
+                    sch_fraction = get_schedule_max_value(idf_data, obj[28])
+                    
                 # Normalize to L/h.m2: m3/s * 3600000 / area
-                results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
+                results[zone_name]["peak_lh_m2"] += (peak_m3s * sch_fraction * 3600000) / area
             
-            # field 3: Setpoint Temperature Schedule Name (index 2)
-            if len(obj) > 2 and obj[2]:
-                results[zone_name]["target_temp_c"] = resolve_schedule_value(idf_data, obj[2])
+                # field 3: Setpoint Temperature Schedule Name (index 2)
+                if len(obj) > 2 and obj[2]:
+                    target_val = resolve_schedule_value(idf_data, obj[2])
+                    if target_val is not None:
+                        results[zone_name]["target_temp_c"] = target_val
         except (ValueError, IndexError):
             continue
 
@@ -204,6 +250,9 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
     results = {name: 0.0 for name in zone_geo}
     for obj in idf_data.get("ZONEINFILTRATION:DESIGNFLOWRATE", []):
         if len(obj) < 3:
+            continue
+        # Skip door infiltration based on object name
+        if "door" in obj[0].lower():
             continue
         zone_name = obj[1]
         if zone_name not in zone_geo:

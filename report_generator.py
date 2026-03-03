@@ -66,7 +66,9 @@ def _collapse_rows(
                     v2 = item.get(k, 0)
 
                     if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
-                        if abs(v1 - v2) > numeric_tolerance:
+                        # Use a tighter tolerance for small architectural metrics (like infiltration/ventilation)
+                        tol = 1e-5
+                        if abs(v1 - v2) > tol:
                             match = False
                             break
                     elif v1 != v2:
@@ -95,8 +97,9 @@ def _collapse_rows(
             row["Count"] = count
             final_rows.append(row)
         else:
-            for row, count in unique_variants:
-                row["Count"] = 1
+            for idx, (row, count) in enumerate(unique_variants):
+                row["name"] = f"{base_name} (Type {chr(65+idx)})"
+                row["Count"] = count
                 final_rows.append(row)
     return final_rows
 

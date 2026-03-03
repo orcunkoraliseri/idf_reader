@@ -1,0 +1,52 @@
+!- ===========================================================
+!- CR4_IAL EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- ===========================================================
+
+!- SCHEDULE (declared once, shared by all objects)
+
+  Schedule:Compact,
+    CR4_IAL_ALWAYS_ON,                         !- Name
+    On/Off,                      !- Schedule Type Limits Name
+    Through: 12/31,
+    For: AllDays,
+    Until: 24:00, 1;
+
+!- ===========================================================
+!- RESIDENTIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    CR4_IAL_ExtLights_ApartmentMidRise,        !- Name
+    CR4_IAL_ALWAYS_ON,                         !- Schedule Name
+    7258.3,                                    !- Design Level {W} (5 x 1451.66 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+!- ===========================================================
+!- COMMERCIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    CR4_IAL_ExtLights_SchoolSecondary,         !- Name
+    CR4_IAL_ALWAYS_ON,                         !- Schedule Name
+    4664.84,                                   !- Design Level {W} (4664.84 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+  Exterior:Lights,
+    CR4_IAL_ExtLights_SmallRetail,             !- Name
+    CR4_IAL_ALWAYS_ON,                         !- Schedule Name
+    130.22,                                    !- Design Level {W} (130.22 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+!- ===========================================================
+!- RESTAURANT
+!- ===========================================================
+
+  Exterior:Lights,
+    CR4_IAL_ExtLights_QSR,                     !- Name
+    CR4_IAL_ALWAYS_ON,                         !- Schedule Name
+    952.15,                                    !- Design Level {W} (952.15 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;

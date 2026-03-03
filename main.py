@@ -46,7 +46,8 @@ def main() -> None:
     
     def get_output_dir_for_idf(idf_path: str) -> str:
         """Helper to determine the output directory based on the IDF source folder."""
-        abs_idf = os.path.abspath(idf_path)
+        # Normalize to forward slashes for cross-platform comparison
+        abs_idf = os.path.abspath(idf_path).replace("\\", "/")
         # Selective output routing based on source folder
         if "Content/CHV_buildings" in abs_idf:
             target = os.path.join(base_output_dir, "output_CHV_buildings")

@@ -188,15 +188,12 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
 
         try:
             # field 3: Peak Flow Rate {m3/s} (index 2)
+            # This is the design/rated peak — do not scale by schedule fraction,
+            # consistent with how lighting and equipment loads are reported.
             peak_m3s = float(obj[2])
-            
-            # field 4: Flow Rate Fraction Schedule Name (index 3)
-            sch_fraction = 1.0
-            if len(obj) > 3 and obj[3]:
-                sch_fraction = get_schedule_max_value(idf_data, obj[3])
-                
+
             # Normalize to L/h.m2: m3/s * 3600000 / area
-            results[zone_name]["peak_lh_m2"] += (peak_m3s * sch_fraction * 3600000) / area
+            results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
             
             # field 5: Target Temperature Schedule Name (index 4)
             if len(obj) > 4 and obj[4]:
@@ -226,13 +223,10 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
             # field 28: Peak Use Flow Rate {m3/s} (index 27)
             peak_m3s = float(obj[27])
             if peak_m3s > 0:
-                sch_fraction = 1.0
-                # field 29: Use Flow Rate Fraction Schedule Name (index 28)
-                if len(obj) > 28 and obj[28]:
-                    sch_fraction = get_schedule_max_value(idf_data, obj[28])
-                    
+                # Peak Use Flow Rate is the design/rated peak — do not scale by schedule fraction,
+                # consistent with WaterUse:Equipment and other load reporting.
                 # Normalize to L/h.m2: m3/s * 3600000 / area
-                results[zone_name]["peak_lh_m2"] += (peak_m3s * sch_fraction * 3600000) / area
+                results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
             
                 # field 3: Setpoint Temperature Schedule Name (index 2)
                 if len(obj) > 2 and obj[2]:
@@ -282,6 +276,12 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
                 results[zone_name] += (float(obj[5]) * floor_area) / norm_area
             elif method == "flow/exteriorwallarea":
                 results[zone_name] += float(obj[6])
+            elif method == "flow/exteriorarea":
+                # Value is per m2 of total exterior surface (walls + roof).
+                # Compute total flow then normalise by norm_area.
+                ext_area = facade_area + exterior_roof
+                if norm_area > 0:
+                    results[zone_name] += (float(obj[6]) * ext_area) / norm_area
             elif method == "airchanges/hour":
                 # ACH * Volume / 3600
                 if volume > 0:

@@ -7,10 +7,12 @@ parsing and processing BuildingSurface:Detailed objects.
 """
 
 import numpy as np
+from extractors import extract_zone_metadata
 from visualizer_adapter import _bsd_offsets
 
 
 def calculate_polygon_area(vertices: list[list[float]]) -> float:
+
     """Calculates the area of a 3D polygon using the cross product method.
 
     Args:
@@ -58,44 +60,14 @@ def get_zone_geometry(
     zone_geo: dict[str, dict[str, float]] = {}
 
     # Initialize zone data from ZONE objects
-    for zone_fields in idf_data.get("ZONE", []):
-        if not zone_fields:
-            continue
-
-        name = zone_fields[0]
-
-        # Multiplier (field 7 in IDF, index 6 in values)
-        try:
-            multiplier = float(zone_fields[6]) if zone_fields[6] else 1.0
-        except (ValueError, IndexError):
-            multiplier = 1.0
-
-        # Volume (field 9 in IDF, index 8 in values)
-        volume = 0.0
-        if len(zone_fields) > 8:
-            val = zone_fields[8].lower()
-            if val != "autocalculate" and val != "":
-                try:
-                    volume = float(val)
-                except ValueError:
-                    pass
-
-        # Floor Area (field 10 in IDF, index 9 in values)
-        floor_area = 0.0
-        if len(zone_fields) > 9:
-            val = zone_fields[9].lower()
-            if val != "autocalculate" and val != "":
-                try:
-                    floor_area = float(val)
-                except ValueError:
-                    pass
-
+    zone_metadata = extract_zone_metadata(idf_data)
+    for name, metadata in zone_metadata.items():
         zone_geo[name] = {
-            "floor_area": floor_area,
+            "floor_area": metadata["floor_area"],
             "facade_area": 0.0,
             "exterior_roof_area": 0.0,
-            "volume": 0.0,
-            "multiplier": multiplier,
+            "volume": metadata["volume"],
+            "multiplier": metadata["multiplier"],
         }
 
     # Process BuildingSurface:Detailed to handle 'autocalculate' and facade area

@@ -17,6 +17,86 @@ def get_first_num(text: str) -> float | None:
     return float(match.group()) if match else None
 
 
+def get_idf_version_tuple(idf_data: dict) -> tuple[int, int]:
+    """Extracts the IDF version as a tuple (major, minor).
+    
+    Defaults to (8, 7) if unknown, providing a global approach 
+    for version-aware object parsing.
+    """
+    version_objs = idf_data.get("VERSION", [])
+    if version_objs and version_objs[0] and len(version_objs[0]) > 0:
+        v_str = str(version_objs[0][0]).strip()
+        parts = v_str.split(".")
+        try:
+            return int(parts[0]), int(parts[1])
+        except (ValueError, IndexError):
+            pass
+    return 8, 7
+
+
+def extract_zone_metadata(idf_data: dict) -> dict[str, dict]:
+    """A global approach to extract zone metadata, adjusting for IDF versions.
+
+    Handles structural changes between versions, such as v8.7/v22.1 using 13 fields
+    versus v8.9/v23.1/v24.2 omitting the Volume and Floor Area fields.
+    """
+    major, minor = get_idf_version_tuple(idf_data)
+    
+    # Identify if the IDF version uses the simplified 7-field Zone object
+    is_short_format = (major == 8 and minor >= 9) or (major >= 23)
+
+    zone_metadata = {}
+    for zone_fields in idf_data.get("ZONE", []):
+        if not zone_fields:
+            continue
+            
+        name = zone_fields[0]
+        
+        # Multiplier (Field 7, index 6 - consistent across all versions)
+        try:
+            multiplier = float(zone_fields[6]) if len(zone_fields) > 6 and str(zone_fields[6]).strip() else 1.0
+        except (ValueError, IndexError):
+            multiplier = 1.0
+            
+        volume = 0.0
+        floor_area = 0.0
+        ceiling_height = None
+        
+        if not is_short_format:
+            # v8.7, v22.1 format (13 fields)
+            if len(zone_fields) > 7:
+                val = str(zone_fields[7]).strip().lower()
+                if val not in ("autocalculate", ""):
+                    try:
+                        ceiling_height = float(val)
+                    except ValueError:
+                        pass
+                        
+            if len(zone_fields) > 8:
+                val = str(zone_fields[8]).strip().lower()
+                if val not in ("autocalculate", ""):
+                    try:
+                        volume = float(val)
+                    except ValueError:
+                        pass
+                        
+            if len(zone_fields) > 9:
+                val = str(zone_fields[9]).strip().lower()
+                if val not in ("autocalculate", ""):
+                    try:
+                        floor_area = float(val)
+                    except ValueError:
+                        pass
+
+        zone_metadata[name] = {
+            "multiplier": multiplier,
+            "ceiling_height": ceiling_height,
+            "volume": volume,
+            "floor_area": floor_area
+        }
+    return zone_metadata
+
+
 def resolve_schedule_value(idf_data: dict, schedule_name: str) -> float | None:
     """Attempts to find a representative numeric value for a schedule."""
     schedule_name_upper = schedule_name.upper()
@@ -78,33 +158,332 @@ def get_schedule_max_value(idf_data: dict, schedule_name: str) -> float:
     return 1.0
 
 
+# ---------------------------------------------------------------------------
+# Annual-average schedule helpers
+# ---------------------------------------------------------------------------
+
+# Fraction of annual days each EnergyPlus day-type keyword represents.
+_DAY_TYPE_WEIGHTS: dict[str, float] = {
+    "WEEKDAYS": 5 / 7,
+    "WEEKENDS": 2 / 7,
+    "ALLDAYS": 1.0,
+    "ALLOTHERDAYS": 2 / 7,
+    "SUNDAY": 1 / 7,
+    "MONDAY": 1 / 7,
+    "TUESDAY": 1 / 7,
+    "WEDNESDAY": 1 / 7,
+    "THURSDAY": 1 / 7,
+    "FRIDAY": 1 / 7,
+    "SATURDAY": 1 / 7,
+    # Design days / special days contribute 0 to the annual average
+    "HOLIDAY": 0.0,
+    "CUSTOMDAY1": 0.0,
+    "CUSTOMDAY2": 0.0,
+    "SUMMERDESIGNDAY": 0.0,
+    "WINTERDESIGNDAY": 0.0,
+}
+
+
+def _day_hourly_avg(sch: list) -> float:
+    """Mean of the 24 hourly values in a Schedule:Day:Hourly object."""
+    vals = []
+    for f in sch[2:26]:
+        try:
+            vals.append(float(f))
+        except (ValueError, TypeError):
+            pass
+    return sum(vals) / len(vals) if vals else 0.0
+
+
+def _day_schedule_avg(idf_data: dict, day_name: str) -> float:
+    """Resolve any day-schedule by name and return its time-weighted average."""
+    name_upper = day_name.strip().upper()
+    for sch in idf_data.get("SCHEDULE:DAY:HOURLY", []):
+        if sch[0].upper() == name_upper:
+            return _day_hourly_avg(sch)
+    return 0.0
+
+
+def _week_compact_avg(idf_data: dict, sch: list) -> float:
+    """Weighted annual average of a Schedule:Week:Compact.
+
+    Fields after name are alternating ``For: <DayType>`` / ``<DayScheduleName>``
+    pairs.  Day types are weighted by their share of the year.
+    """
+    fields = sch[1:]
+    weighted_sum = 0.0
+    total_weight = 0.0
+    i = 0
+    while i < len(fields) - 1:
+        f = str(fields[i]).strip().upper()
+        if f.startswith("FOR:"):
+            day_type = f[4:].strip()
+            weight = _DAY_TYPE_WEIGHTS.get(day_type, 0.0)
+            day_name = str(fields[i + 1]).strip()
+            day_avg = _day_schedule_avg(idf_data, day_name)
+            weighted_sum += weight * day_avg
+            total_weight += weight
+            i += 2
+        else:
+            i += 1
+    return weighted_sum / total_weight if total_weight > 0 else 0.0
+
+
+def _week_daily_avg(idf_data: dict, sch: list) -> float:
+    """Annual average of a Schedule:Week:Daily (Sunday=idx1 … Saturday=idx7)."""
+    day_names = sch[1:8]
+    return sum(_day_schedule_avg(idf_data, n) for n in day_names if n) / 7
+
+
+def _year_schedule_avg(idf_data: dict, sch: list) -> float:
+    """Annual average of a Schedule:Year, weighted by each range's day count."""
+    MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+    def doy(month: int, day: int) -> int:
+        return sum(MONTH_DAYS[: month - 1]) + day
+
+    weighted_sum = 0.0
+    total_days = 0.0
+    i = 2  # skip name and type_limits
+    while i + 4 < len(sch):
+        week_name = str(sch[i]).strip()
+        try:
+            sm, sd = int(sch[i + 1]), int(sch[i + 2])
+            em, ed = int(sch[i + 3]), int(sch[i + 4])
+        except (ValueError, IndexError):
+            break
+        days = max(1, doy(em, ed) - doy(sm, sd) + 1)
+
+        wnu = week_name.upper()
+        week_avg = 0.0
+        for ws in idf_data.get("SCHEDULE:WEEK:COMPACT", []):
+            if ws[0].upper() == wnu:
+                week_avg = _week_compact_avg(idf_data, ws)
+                break
+        else:
+            for ws in idf_data.get("SCHEDULE:WEEK:DAILY", []):
+                if ws[0].upper() == wnu:
+                    week_avg = _week_daily_avg(idf_data, ws)
+                    break
+
+        weighted_sum += week_avg * days
+        total_days += days
+        i += 5
+
+    return weighted_sum / total_days if total_days > 0 else 0.0
+
+
+def _compact_schedule_avg(sch: list) -> float:
+    """Time-weighted average of a Schedule:Compact.
+
+    Parses ``Until: HH:MM`` / value pairs inside each ``For:`` block and
+    computes a time-weighted mean per block, then returns the mean across
+    all blocks (equal-weight approximation suitable for annual averages).
+    """
+    fields = sch[2:]  # skip name and type_limits
+    block_avgs: list[float] = []
+    prev_min = 0.0
+    weighted_sum = 0.0
+    total_min = 0.0
+    in_block = False
+
+    i = 0
+    while i < len(fields):
+        f = str(fields[i]).strip()
+        fu = f.upper()
+
+        if "THROUGH:" in fu:
+            i += 1
+            continue
+
+        if "FOR:" in fu:
+            if in_block and total_min > 0:
+                block_avgs.append(weighted_sum / total_min)
+            prev_min = 0.0
+            weighted_sum = 0.0
+            total_min = 0.0
+            in_block = True
+            i += 1
+            continue
+
+        if "UNTIL:" in fu:
+            time_str = fu.replace("UNTIL:", "").strip()
+            parts = time_str.split(":")
+            try:
+                h = int(parts[0])
+                m = int(parts[1]) if len(parts) > 1 else 0
+                until_min = h * 60 + m
+                if i + 1 < len(fields):
+                    val = float(str(fields[i + 1]).strip())
+                    duration = until_min - prev_min
+                    if duration > 0:
+                        weighted_sum += val * duration
+                        total_min += duration
+                    prev_min = until_min
+                    i += 2
+                    continue
+            except (ValueError, IndexError):
+                pass
+            i += 1
+            continue
+
+        i += 1
+
+    if in_block and total_min > 0:
+        block_avgs.append(weighted_sum / total_min)
+
+    return sum(block_avgs) / len(block_avgs) if block_avgs else 0.0
+
+
+def compute_schedule_annual_average(idf_data: dict, schedule_name: str) -> float:
+    """Return the annual time-weighted average value of any EnergyPlus schedule.
+
+    Resolves Schedule:Constant, Schedule:Compact, Schedule:Year,
+    Schedule:Week:Compact, Schedule:Week:Daily, and Schedule:Day:Hourly.
+    Falls back to 1.0 if the schedule cannot be resolved.
+    """
+    if not schedule_name:
+        return 1.0
+    name_upper = schedule_name.strip().upper()
+
+    for sch in idf_data.get("SCHEDULE:CONSTANT", []):
+        if sch[0].upper() == name_upper:
+            try:
+                return float(sch[2])
+            except (ValueError, IndexError):
+                return 1.0
+
+    for sch in idf_data.get("SCHEDULE:COMPACT", []):
+        if sch[0].upper() == name_upper:
+            return _compact_schedule_avg(sch)
+
+    for sch in idf_data.get("SCHEDULE:YEAR", []):
+        if sch[0].upper() == name_upper:
+            return _year_schedule_avg(idf_data, sch)
+
+    for sch in idf_data.get("SCHEDULE:WEEK:COMPACT", []):
+        if sch[0].upper() == name_upper:
+            return _week_compact_avg(idf_data, sch)
+
+    for sch in idf_data.get("SCHEDULE:WEEK:DAILY", []):
+        if sch[0].upper() == name_upper:
+            return _week_daily_avg(idf_data, sch)
+
+    for sch in idf_data.get("SCHEDULE:DAY:HOURLY", []):
+        if sch[0].upper() == name_upper:
+            return _day_hourly_avg(sch)
+
+    return 1.0
+
+
+def get_zone_from_space(space_name: str, idf_data: dict) -> str | None:
+    """Helper to find the zone name associated with a space name (v22.1+)."""
+    for space in idf_data.get("SPACE", []):
+        if not space:
+            continue
+        if space[0].upper() == space_name.upper():
+            if len(space) > 1:
+                return space[1]
+    return None
+
+
+def resolve_target_to_zones(target_name: str, idf_data: dict, zone_geo: dict) -> list[str]:
+    """A global approach to resolve a Zone, Space, ZoneList, or SpaceList name 
+    into a list of underlying Zone names, supporting newer IDF versions (v22.1+)."""
+    target_upper = target_name.upper()
+    resolved_zones = []
+    
+    # 1. Is it directly a Zone? (O(N) search to be case-insensitive)
+    for zn in zone_geo:
+        if zn.upper() == target_upper:
+            return [zn]
+            
+    # 2. Is it a ZoneList?
+    for zl in idf_data.get("ZONELIST", []):
+        if not zl:
+            continue
+        if zl[0].upper() == target_upper:
+            for zn_candidate in zl[1:]:
+                if not zn_candidate:
+                    continue
+                zc_upper = zn_candidate.upper()
+                for zn in zone_geo:
+                    if zn.upper() == zc_upper and zn not in resolved_zones:
+                        resolved_zones.append(zn)
+            if resolved_zones:
+                return resolved_zones
+                
+    # 3. Is it a Space? (v22.1+)
+    for space in idf_data.get("SPACE", []):
+        if not space:
+            continue
+        if space[0].upper() == target_upper:
+            if len(space) > 1:
+                zn_name = space[1].upper()
+                for zn in zone_geo:
+                    if zn.upper() == zn_name:
+                        return [zn]
+
+    # 4. Is it a SpaceList? (v22.1+)
+    for sl in idf_data.get("SPACELIST", []):
+        if not sl:
+            continue
+        if sl[0].upper() == target_upper:
+            for sp_candidate in sl[1:]:
+                if not sp_candidate:
+                    continue
+                zn_name = get_zone_from_space(sp_candidate, idf_data)
+                if zn_name:
+                    zn_upper = zn_name.upper()
+                    for zn in zone_geo:
+                        if zn.upper() == zn_upper and zn not in resolved_zones:
+                            resolved_zones.append(zn)
+            if resolved_zones:
+                return resolved_zones
+    
+    return []
+
+
 def extract_people(idf_data: dict, zone_geo: dict) -> dict[str, float]:
-    """Extracts occupancy density (people/m2)."""
+    """Extracts occupancy density (people/m2) using version-aware target resolution."""
     results = {name: 0.0 for name in zone_geo}
     for obj in idf_data.get("PEOPLE", []):
         if len(obj) < 3:
             continue
-        zone_name = obj[1]
-        if zone_name not in zone_geo:
+            
+        target_name = obj[1]
+        target_zones = resolve_target_to_zones(target_name, idf_data, zone_geo)
+        
+        if not target_zones:
             continue
 
         method = obj[3].lower()
-        area = zone_geo[zone_name]["floor_area"]
-        if area <= 0:
+        
+        # Calculate total valid area of the resolved zones
+        total_target_area = sum(zone_geo[zn]["floor_area"] for zn in target_zones if zone_geo[zn]["floor_area"] > 0)
+        if total_target_area <= 0:
             continue
 
         try:
             if method == "people":
                 # field 5: Number of People
-                results[zone_name] += float(obj[4]) / area
-            elif method in ["people/area", "perarea"]:
+                absolute_people = float(obj[4])
+                # Distribute count proportionally to constituent zone sizes
+                for zn in target_zones:
+                    zn_area = zone_geo[zn]["floor_area"]
+                    if zn_area > 0:
+                        allocated_people = absolute_people * (zn_area / total_target_area)
+                        results[zn] += allocated_people / zn_area
+            elif method in ["people/area", "perarea", "people/floorarea"]:
                 # field 6: People per Floor Area
-                results[zone_name] += float(obj[5])
-            elif method in ["area/person", "perperson"]:
+                for zn in target_zones:
+                    results[zn] += float(obj[5])
+            elif method in ["area/person", "perperson", "floorarea/person"]:
                 # field 7: Floor Area per Person
                 val = float(obj[6])
                 if val > 0:
-                    results[zone_name] += 1.0 / val
+                    for zn in target_zones:
+                        results[zn] += 1.0 / val
         except (ValueError, IndexError):
             continue
     return results
@@ -113,13 +492,16 @@ def extract_people(idf_data: dict, zone_geo: dict) -> dict[str, float]:
 def extract_loads(
     idf_data: dict, zone_geo: dict, obj_key: str, subcat_filter: str | None = None, exclude_subcat_filter: str | None = None
 ) -> dict[str, float]:
-    """Helper to extract Lights or Equipment loads (W/m2)."""
+    """Helper to extract Lights or Equipment loads (W/m2) using version-aware target resolution."""
     results = {name: 0.0 for name in zone_geo}
     for obj in idf_data.get(obj_key.upper(), []):
         if len(obj) < 3:
             continue
-        zone_name = obj[1]
-        if zone_name not in zone_geo:
+            
+        target_name = obj[1]
+        target_zones = resolve_target_to_zones(target_name, idf_data, zone_geo)
+        
+        if not target_zones:
             continue
 
         # Optional filters by subcategory
@@ -131,19 +513,28 @@ def extract_loads(
                 continue
 
         method = obj[3].lower()
-        area = zone_geo[zone_name]["floor_area"]
-        if area <= 0:
+        
+        total_target_area = sum(zone_geo[zn]["floor_area"] for zn in target_zones if zone_geo[zn]["floor_area"] > 0)
+        if total_target_area <= 0:
             continue
 
         try:
             if method in ["lightinglevel", "equipmentlevel", "level"]:
                 # field 5 in IDF
-                results[zone_name] += float(obj[4]) / area
-            elif method in ["watts/area", "perarea"]:
+                absolute_load = float(obj[4])
+                # Distribute load proportionally to constituent zone sizes
+                for zn in target_zones:
+                    zn_area = zone_geo[zn]["floor_area"]
+                    if zn_area > 0:
+                        allocated_load = absolute_load * (zn_area / total_target_area)
+                        results[zn] += allocated_load / zn_area
+            elif method in ["watts/area", "perarea", "watts/floorarea"]:
                 # field 6 in IDF
-                results[zone_name] += float(obj[5])
+                val = float(obj[5])
+                for zn in target_zones:
+                    results[zn] += val
             elif method in ["watts/person", "perperson"]:
-                # field 7 in IDF
+                # field 7 in IDF (needs occupancy relation, presently unimplemented)
                 pass
         except (ValueError, IndexError):
             continue
@@ -151,35 +542,75 @@ def extract_loads(
 
 
 def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, float]]:
-    """Extracts SHW usage (L/h.m2) and Target Temperature (C)."""
-    results = {name: {"peak_lh_m2": 0.0, "target_temp_c": 0.0} for name in zone_geo}
+    """Extracts SHW usage (L/h.m2) and Target Temperature (C) using version-aware logic."""
+
+    results = {name: {"avg_lh_m2": 0.0, "target_temp_c": 0.0} for name in zone_geo}
     for obj in idf_data.get("WATERUSE:EQUIPMENT", []):
         if len(obj) < 3:
             continue
 
-        # If field 8 (index 7) exists, use it.
-        zone_name = obj[7] if len(obj) >= 8 else ""
+        # Field 8 (index 7) is the Zone Name in the full 10-field
+        # format.  Try it regardless of version because some files
+        # retain the long form even for newer EnergyPlus versions.
+        zone_name = ""
+        if len(obj) >= 8 and obj[7].strip():
+            candidate = obj[7].strip()
+            if candidate in zone_geo:
+                zone_name = candidate
 
+        # For short formats, or if field 8 was omitted, we fallback to heuristics
         if not zone_name or zone_name not in zone_geo:
-            # Heuristic for residential: match equipment name suffix (e.g., _unit1) 
-            # with zone name suffix or living zone
-            obj_name = obj[0]
-            unit_match = re.search(r"(_unit\d+)$", obj_name, re.IGNORECASE)
-            if unit_match:
-                suffix = unit_match.group(1).upper()
-                # Find the 'living' zone for this unit
-                for zn in zone_geo:
-                    if zn.upper().endswith(suffix) and "LIVING" in zn.upper():
-                        zone_name = zn
+            # Heuristic for residential: match equipment name to
+            # the living zone sharing the longest common prefix
+            # or suffix.  Prefix handles clusters like
+            # 17_24_living_unit1 <- 17_24_Sinks_unit1.  Suffix
+            # handles multi-family like living_unit1_FrontRow
+            # <- Clothes Washer_unit1_FrontRow.
+            obj_name_upper = obj[0].upper()
+            best_zone = ""
+            best_score = 0
+            for zn in zone_geo:
+                zn_upper = zn.upper()
+                if "LIVING" not in zn_upper:
+                    continue
+                # Longest common prefix
+                plen = 0
+                for c1, c2 in zip(
+                    obj_name_upper, zn_upper
+                ):
+                    if c1 == c2:
+                        plen += 1
+                    else:
                         break
-            
-            # Fallback: if still no match and there's only one living zone, use it
+                # Longest common suffix
+                slen = 0
+                for c1, c2 in zip(
+                    reversed(obj_name_upper),
+                    reversed(zn_upper),
+                ):
+                    if c1 == c2:
+                        slen += 1
+                    else:
+                        break
+                score = plen + slen
+                if score > best_score:
+                    best_score = score
+                    best_zone = zn
+
+            if best_zone and best_score >= 3:
+                zone_name = best_zone
+
+            # Fallback: if still no match and there's only one
+            # living zone, use it
             if not zone_name:
-                living_zones = [zn for zn in zone_geo if "LIVING" in zn.upper()]
+                living_zones = [
+                    zn for zn in zone_geo
+                    if "LIVING" in zn.upper()
+                ]
                 if len(living_zones) == 1:
                     zone_name = living_zones[0]
 
-        if zone_name not in zone_geo:
+        if not zone_name or zone_name not in zone_geo:
             continue
 
         area = zone_geo[zone_name]["floor_area"]
@@ -188,16 +619,22 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
 
         try:
             # field 3: Peak Flow Rate {m3/s} (index 2)
-            # This is the design/rated peak — do not scale by schedule fraction,
-            # consistent with how lighting and equipment loads are reported.
             peak_m3s = float(obj[2])
 
-            # Normalize to L/h.m2: m3/s * 3600000 / area
-            results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
-            
+            # field 4: Flow Rate Fraction Schedule Name (index 3)
+            flow_sched = obj[3].strip() if len(obj) > 3 and obj[3] else ""
+            avg_fraction = compute_schedule_annual_average(idf_data, flow_sched) if flow_sched else 1.0
+
+            # Normalize annual-average flow to L/h.m2
+            results[zone_name]["avg_lh_m2"] += (peak_m3s * avg_fraction * 3600000) / area
+
             # field 5: Target Temperature Schedule Name (index 4)
             if len(obj) > 4 and obj[4]:
-                results[zone_name]["target_temp_c"] = resolve_schedule_value(idf_data, obj[4])
+                temp_c = resolve_schedule_value(idf_data, obj[4])
+                if temp_c is not None:
+                    # Often there are multiple SHW objects per zone; take the max target temperature
+                    if temp_c > results[zone_name]["target_temp_c"]:
+                        results[zone_name]["target_temp_c"] = temp_c
         except (ValueError, IndexError):
             continue
 
@@ -223,16 +660,15 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
             # field 28: Peak Use Flow Rate {m3/s} (index 27)
             peak_m3s = float(obj[27])
             if peak_m3s > 0:
-                # Peak Use Flow Rate is the design/rated peak — do not scale by schedule fraction,
-                # consistent with WaterUse:Equipment and other load reporting.
                 # Normalize to L/h.m2: m3/s * 3600000 / area
-                results[zone_name]["peak_lh_m2"] += (peak_m3s * 3600000) / area
+                results[zone_name]["avg_lh_m2"] += (peak_m3s * 3600000) / area
             
                 # field 3: Setpoint Temperature Schedule Name (index 2)
                 if len(obj) > 2 and obj[2]:
                     target_val = resolve_schedule_value(idf_data, obj[2])
                     if target_val is not None:
-                        results[zone_name]["target_temp_c"] = target_val
+                        if target_val > results[zone_name]["target_temp_c"]:
+                            results[zone_name]["target_temp_c"] = target_val
         except (ValueError, IndexError):
             continue
 
@@ -248,45 +684,74 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
         # Skip door infiltration based on object name
         if "door" in obj[0].lower():
             continue
-        zone_name = obj[1]
-        if zone_name not in zone_geo:
+            
+        target_name = obj[1]
+        target_zones = resolve_target_to_zones(target_name, idf_data, zone_geo)
+        
+        if not target_zones:
             continue
 
         method = obj[3].lower()
-        facade_area = zone_geo[zone_name]["facade_area"]
-        exterior_roof = zone_geo[zone_name].get("exterior_roof_area", 0.0)
-        floor_area = zone_geo[zone_name]["floor_area"]
-        volume = zone_geo[zone_name]["volume"]
-
-        # Total exterior surface area (Face + Roof)
-        exterior_area = facade_area + exterior_roof
         
-        # Norm area logic: Prefer exterior area, fallback to floor area if 
-        # exterior area is 0 or disproportionately small (< 5% of floor area)
-        norm_area = exterior_area
-        if exterior_area <= 0 or (floor_area > 0 and exterior_area < 0.05 * floor_area):
-            norm_area = floor_area
-        if norm_area <= 0:
+        # Pre-compute norm_area for each targeted zone
+        zones_norm_area = {}
+        for zn in target_zones:
+            facade_area = zone_geo[zn]["facade_area"]
+            exterior_roof = zone_geo[zn].get("exterior_roof_area", 0.0)
+            floor_area = zone_geo[zn]["floor_area"]
+            
+            exterior_area = facade_area + exterior_roof
+            
+            norm_area = exterior_area
+            if exterior_area <= 0 or (floor_area > 0 and exterior_area < 0.05 * floor_area):
+                norm_area = floor_area
+                
+            zones_norm_area[zn] = norm_area
+
+        total_target_norm_area = sum(zones_norm_area[zn] for zn in target_zones if zones_norm_area[zn] > 0)
+        
+        if total_target_norm_area <= 0:
             continue
 
         try:
             if method in ["flow/zone", "level"]:
-                results[zone_name] += float(obj[4]) / norm_area
-            elif method == "flow/area":
-                results[zone_name] += (float(obj[5]) * floor_area) / norm_area
-            elif method == "flow/exteriorwallarea":
-                results[zone_name] += float(obj[6])
-            elif method == "flow/exteriorarea":
+                absolute_m3s = float(obj[4])
+                for zn in target_zones:
+                    n_area = zones_norm_area[zn]
+                    if n_area > 0:
+                        allocated_m3s = absolute_m3s * (n_area / total_target_norm_area)
+                        results[zn] += allocated_m3s / n_area
+            elif method in ["flow/area", "flow/floorarea", "flowrate/floorarea"]:
+                # Value is per unit of floor area
+                val = float(obj[5])
+                for zn in target_zones:
+                    n_area = zones_norm_area[zn]
+                    if n_area > 0:
+                        results[zn] += (val * zone_geo[zn]["floor_area"]) / n_area
+            elif method in ["flow/exteriorwallarea", "flowrate/exteriorwallarea"]:
+                # Value is per unit of exterior wall area
+                val = float(obj[6])
+                for zn in target_zones:
+                    n_area = zones_norm_area[zn]
+                    if n_area > 0:
+                        results[zn] += (val * zone_geo[zn]["facade_area"]) / n_area
+            elif method in ["flow/exteriorarea", "flowrate/exteriorsurfacearea", "flow/exteriorsurfacearea"]:
                 # Value is per m2 of total exterior surface (walls + roof).
-                # Compute total flow then normalise by norm_area.
-                ext_area = facade_area + exterior_roof
-                if norm_area > 0:
-                    results[zone_name] += (float(obj[6]) * ext_area) / norm_area
+                val = float(obj[6])
+                for zn in target_zones:
+                    n_area = zones_norm_area[zn]
+                    if n_area > 0:
+                        ext_area = zone_geo[zn]["facade_area"] + zone_geo[zn].get("exterior_roof_area", 0.0)
+                        results[zn] += (val * ext_area) / n_area
             elif method == "airchanges/hour":
                 # ACH * Volume / 3600
-                if volume > 0:
-                    m3s = (float(obj[7]) * volume) / 3600
-                    results[zone_name] += m3s / norm_area
+                ach = float(obj[7])
+                for zn in target_zones:
+                    n_area = zones_norm_area[zn]
+                    volume = zone_geo[zn]["volume"]
+                    if n_area > 0 and volume > 0:
+                        m3s = (ach * volume) / 3600
+                        results[zn] += m3s / n_area
         except (ValueError, IndexError):
             continue
 
@@ -391,9 +856,17 @@ def extract_infiltration(idf_data: dict, zone_geo: dict) -> dict[str, float]:
 
 
 def extract_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, float]]:
-    """Extracts ventilation (m3/s per person, m3/s per m2, and ACH)."""
+    """Extracts ventilation metrics ([m3/s/person], [m3/s/m2], and [ACH]) using a global evaluation approach."""
     results = {name: {"per_person": 0.0, "per_area": 0.0, "ach": 0.0} for name in zone_geo}
+    
+    # Needs occupancy density to convert absolute metrics to per_person metrics
+    people_density = extract_people(idf_data, zone_geo) # People per m2
+
+    # 1. Support for DESIGNSPECIFICATION:OUTDOORAIR
     for obj in idf_data.get("DESIGNSPECIFICATION:OUTDOORAIR", []):
+        if len(obj) < 2:
+            continue
+            
         name = obj[0].upper()
         # Robust Heuristic: Clean names for matching (remove spaces, underscores, and SZ DSOA)
         search_name = name.replace("_", "").replace(" ", "").replace("SZDSOA", "")
@@ -409,19 +882,32 @@ def extract_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
         if not matched_zone:
             continue
 
+        method = obj[1].lower() if len(obj) > 1 else ""
+        area = zone_geo[matched_zone]["floor_area"]
+        volume = zone_geo[matched_zone]["volume"]
+        occupants = people_density.get(matched_zone, 0.0) * area
+
         try:
-            # Field 3: Flow per Person
-            if len(obj) > 2 and obj[2]:
-                results[matched_zone]["per_person"] = float(obj[2])
-            # Field 4: Flow per Area
-            if len(obj) > 3 and obj[3]:
-                results[matched_zone]["per_area"] = float(obj[3])
-            # Field 5: Flow per Zone
-            if len(obj) > 4 and obj[4]:
-                flow_zone = float(obj[4])
-                area = zone_geo[matched_zone]["floor_area"]
-                if area > 0:
-                    results[matched_zone]["per_area"] += flow_zone / area
+            flow_per_person = float(obj[2]) if len(obj) > 2 and obj[2] else 0.0
+            flow_per_area = float(obj[3]) if len(obj) > 3 and obj[3] else 0.0
+            flow_zone = float(obj[4]) if len(obj) > 4 and obj[4] else 0.0
+            ach = float(obj[5]) if len(obj) > 5 and obj[5] else 0.0
+
+            # Compute actual flows depending on the method
+            active_methods = [method] if method not in ("sum", "maximum") else ["flow/person", "flow/area", "flow/zone", "airchanges/hour"]
+            
+            if "flow/person" in active_methods and occupants > 0:
+                results[matched_zone]["per_person"] += flow_per_person
+            
+            if "flow/area" in active_methods and area > 0:
+                results[matched_zone]["per_area"] += flow_per_area
+                
+            if "flow/zone" in active_methods and area > 0:
+                results[matched_zone]["per_area"] += flow_zone / area
+                    
+            if "airchanges/hour" in active_methods and volume > 0:
+                results[matched_zone]["ach"] += ach
+
         except (ValueError, IndexError):
             continue
 
@@ -429,23 +915,44 @@ def extract_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
     for obj in idf_data.get("ZONEVENTILATION:DESIGNFLOWRATE", []):
         if len(obj) < 4:
             continue
-        zone_name = obj[1]
-        if zone_name not in zone_geo:
+            
+        target_name = obj[1]
+        target_zones = resolve_target_to_zones(target_name, idf_data, zone_geo)
+        
+        if not target_zones:
             continue
             
         method = obj[3].upper()
+        
+        # Calculate total target dimensions
+        total_target_area = sum(zone_geo[zn]["floor_area"] for zn in target_zones if zone_geo[zn]["floor_area"] > 0)
+        total_target_volume = sum(zone_geo[zn]["volume"] for zn in target_zones if zone_geo[zn]["volume"] > 0)
+        
         try:
-            if method == "FLOW/ZONE" and len(obj) > 4 and obj[4]:
-                flow_zone = float(obj[4])
-                area = zone_geo[zone_name]["floor_area"]
-                if area > 0:
-                    results[zone_name]["per_area"] += flow_zone / area
-            elif method == "FLOW/PERSON" and len(obj) > 5 and obj[5]:
-                results[zone_name]["per_person"] += float(obj[5])
-            elif method == "FLOW/AREA" and len(obj) > 6 and obj[6]:
-                results[zone_name]["per_area"] += float(obj[6])
-            elif method == "AIRCHANGES/HOUR" and len(obj) > 7 and obj[7]:
-                results[zone_name]["ach"] += float(obj[7])
+            if method == "FLOW/ZONE":
+                if len(obj) > 4 and obj[4] and total_target_area > 0:
+                    absolute_flow = float(obj[4])
+                    for zn in target_zones:
+                        zn_area = zone_geo[zn]["floor_area"]
+                        if zn_area > 0:
+                            allocated_flow = absolute_flow * (zn_area / total_target_area)
+                            results[zn]["per_area"] += allocated_flow / zn_area
+            elif method in ["FLOW/AREA", "FLOWRATE/FLOORAREA"]:
+                if len(obj) > 5 and obj[5]:
+                    val = float(obj[5])
+                    for zn in target_zones:
+                        if zone_geo[zn]["floor_area"] > 0:
+                            results[zn]["per_area"] += val
+            elif method == "FLOW/PERSON":
+                if len(obj) > 6 and obj[6]:
+                    val = float(obj[6])
+                    for zn in target_zones:
+                        results[zn]["per_person"] += val
+            elif method == "AIRCHANGES/HOUR":
+                if len(obj) > 7 and obj[7]:
+                    ach = float(obj[7])
+                    for zn in target_zones:
+                        results[zn]["ach"] += ach
         except (ValueError, IndexError):
             continue
 
@@ -520,22 +1027,48 @@ def extract_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
 
 
 def extract_thermostats(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, float]]:
-    """Extracts heating and cooling setpoints (°C)."""
+    """Extracts heating and cooling setpoints (°C) using version-aware targeting and occupied design evaluation."""
     results = {name: {"heating": 0.0, "cooling": 0.0} for name in zone_geo}
 
-    # 1. Map Zone to Thermostat Object via ZoneControl:Thermostat
-    zone_to_thermo = {}
+    # Helper to find occupied/design values across different schedule patterns
+    def get_design_setpoint(schedule_name: str, is_heating: bool) -> float | None:
+        if not schedule_name:
+            return None
+        sch_upper = schedule_name.upper()
+        
+        # Check Schedule:Constant
+        for sch in idf_data.get("SCHEDULE:CONSTANT", []):
+            if sch[0].upper() == sch_upper:
+                try:
+                    return float(sch[2])
+                except (ValueError, IndexError):
+                    pass
+                    
+        # Check Schedule:Compact
+        vals = []
+        for sch in idf_data.get("SCHEDULE:COMPACT", []):
+            if sch[0].upper() == sch_upper:
+                for field in sch[2:]:
+                    f_str = field.strip()
+                    try:
+                        vals.append(float(f_str))
+                    except ValueError:
+                        pass
+        if vals:
+            # For time-varying heating schedules: the occupied period is the highest temp
+            # For time-varying cooling schedules: the occupied period is the lowest temp
+            return max(vals) if is_heating else min(vals)
+            
+        return None
+
     for obj in idf_data.get("ZONECONTROL:THERMOSTAT", []):
         if len(obj) < 2:
             continue
-        zone_name = obj[1]
-        thermo_name = obj[0]
-        zone_to_thermo[zone_name] = thermo_name
-
-    # 2. Extract Setpoints from Thermostat Objects
-    for obj in idf_data.get("ZONECONTROL:THERMOSTAT", []):
-        zn = obj[1]
-        if zn not in results:
+            
+        target_name = obj[1]
+        target_zones = resolve_target_to_zones(target_name, idf_data, zone_geo)
+        
+        if not target_zones:
             continue
 
         # Look at the Control types (fields 4, 6, 8...)
@@ -546,24 +1079,27 @@ def extract_thermostats(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
             if control_type == "THERMOSTATSETPOINT:DUALSETPOINT":
                 for sp in idf_data.get("THERMOSTATSETPOINT:DUALSETPOINT", []):
                     if sp[0].upper() == control_name.upper():
-                        h = resolve_schedule_value(idf_data, sp[1])
-                        c = resolve_schedule_value(idf_data, sp[2])
-                        if h is not None:
-                            results[zn]["heating"] = h
-                        if c is not None:
-                            results[zn]["cooling"] = c
+                        h = get_design_setpoint(sp[1] if len(sp) > 1 else "", is_heating=True)
+                        c = get_design_setpoint(sp[2] if len(sp) > 2 else "", is_heating=False)
+                        for zn in target_zones:
+                            if h is not None:
+                                results[zn]["heating"] = h
+                            if c is not None:
+                                results[zn]["cooling"] = c
             elif control_type == "THERMOSTATSETPOINT:SINGLEHEATING":
                 for sp in idf_data.get("THERMOSTATSETPOINT:SINGLEHEATING", []):
                     if sp[0].upper() == control_name.upper():
-                        h = resolve_schedule_value(idf_data, sp[1])
-                        if h is not None:
-                            results[zn]["heating"] = h
+                        h = get_design_setpoint(sp[1] if len(sp) > 1 else "", is_heating=True)
+                        for zn in target_zones:
+                            if h is not None:
+                                results[zn]["heating"] = h
             elif control_type == "THERMOSTATSETPOINT:SINGLECOOLING":
                 for sp in idf_data.get("THERMOSTATSETPOINT:SINGLECOOLING", []):
                     if sp[0].upper() == control_name.upper():
-                        c = resolve_schedule_value(idf_data, sp[1])
-                        if c is not None:
-                            results[zn]["cooling"] = c
+                        c = get_design_setpoint(sp[1] if len(sp) > 1 else "", is_heating=False)
+                        for zn in target_zones:
+                            if c is not None:
+                                results[zn]["cooling"] = c
 
     return results
 

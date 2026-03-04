@@ -104,6 +104,10 @@ def process_file(idf_path: str, output_dir: str) -> None:
         print(f"  Failed to parse IDF: {e}")
         return
 
+    from extractors import get_idf_version_tuple
+    major, minor = get_idf_version_tuple(idf_data)
+    print(f"  Detected IDF Version: {major}.{minor}")
+
     zone_geo = get_zone_geometry(idf_data)
     if not zone_geo:
         print("  No zones found in the IDF file.")
@@ -143,7 +147,7 @@ def process_file(idf_path: str, output_dir: str) -> None:
                 "lights": lights.get(zone_name, 0.0),
                 "electric": electric.get(zone_name, 0.0),
                 "gas": gas.get(zone_name, 0.0),
-                "water": water.get(zone_name, {}).get("peak_lh_m2", 0.0),
+                "water": water.get(zone_name, {}).get("avg_lh_m2", 0.0),
                 "water_temp": water.get(zone_name, {}).get("target_temp_c", 0.0),
                 "infiltration": infiltration.get(zone_name, 0.0),
                 "vent_person": ventilation.get(zone_name, {}).get("per_person", 0.0),

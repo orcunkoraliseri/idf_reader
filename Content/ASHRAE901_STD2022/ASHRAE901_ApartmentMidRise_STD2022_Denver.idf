@@ -7976,7 +7976,7 @@ Output:Diagnostics,DisplayExtraWarnings;
 
   ZoneControl:Thermostat,
     G SW Apartment Thermostat,      !- Name
-    G SW Apartment,                 !- Zone or ZoneList Name
+    G SW Apartment,                !- Zone or ZoneList Name
     ZONE CONTROL TYPE SCHED,  !- Control Type Schedule Name
     ThermostatSetpoint:SingleCooling,  !- Control 1 Object Type
     AptCoolingSetPoint,      !- Control 1 Name

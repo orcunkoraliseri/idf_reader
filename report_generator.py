@@ -343,6 +343,7 @@ def generate_reports(
     # 1. Define internal key map and display headers
     key_map = {
         "Zone": "name",
+        "Story Count": "story_count",
         "Floor Area [m2]": "floor_area",
         "Occupancy [people/m2]": "people",
         "Lighting [W/m2]": "lights",
@@ -366,7 +367,7 @@ def generate_reports(
         groups.setdefault(base, []).append(zone)
 
     internal_data_keys = [key_map[h] for h in data_headers]
-    comparison_keys = [k for k in internal_data_keys if k != "floor_area"]
+    comparison_keys = [k for k in internal_data_keys if k not in ["floor_area", "story_count"]]
     final_rows = _collapse_rows(groups, comparison_keys)
 
     # 3. Process HVAC Data Deduplication
@@ -498,6 +499,13 @@ def generate_html_content(
             # Use 5 decimals for Infiltration and Ventilation, otherwise 4
             precision = 5 if ("Infiltration" in h or "Ventilation" in h) else 4
             formatted_val = _format_val(val, precision)
+            
+            if h == "Floor Area [m2]":
+                story_count = zone.get("story_count", 1)
+                if story_count > 1 and val > 0:
+                    footprint = val / story_count
+                    formatted_val = f"{_format_val(footprint, precision)} (Footprint)"
+
             cls = ' class="wrap-txt"' if h in ["Zone", "Thermal Zone"] else ""
             cells_html += f"<td{cls}>{formatted_val}</td>"
         rows_html += f"<tr>{cells_html}</tr>"

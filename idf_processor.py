@@ -142,6 +142,7 @@ def process_file(idf_path: str, output_dir: str) -> None:
             {
                 "name": zone_name,
                 "floor_area": geo["floor_area"],
+                "story_count": geo.get("story_count", 1),
                 "multiplier": geo["multiplier"],
                 "people": people.get(zone_name, 0.0),
                 "lights": lights.get(zone_name, 0.0),

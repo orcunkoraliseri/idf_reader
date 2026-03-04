@@ -68,6 +68,8 @@ def get_zone_geometry(
             "exterior_roof_area": 0.0,
             "volume": metadata["volume"],
             "multiplier": metadata["multiplier"],
+            "story_count": 1,
+            "_floor_elevations": set(),
         }
 
     # Process BuildingSurface:Detailed to handle 'autocalculate' and facade area
@@ -123,6 +125,11 @@ def get_zone_geometry(
                 if "sum_floor" not in zone_geo[zone_name]:
                     zone_geo[zone_name]["sum_floor"] = 0.0
                 zone_geo[zone_name]["sum_floor"] += surf_area
+                
+                # Use the Z coordinate of the first vertex to identify the floor's elevation
+                # Round to 1 decimal place to group surfaces on the same story
+                z_elev = round(v_arr[0][2], 1)
+                zone_geo[zone_name]["_floor_elevations"].add(z_elev)
 
             if surf_type == "wall" and "outdoors" in boundary:
                 zone_geo[zone_name]["facade_area"] += surf_area
@@ -141,6 +148,12 @@ def get_zone_geometry(
     for name, data in zone_geo.items():
         if data["floor_area"] <= 0.001 and "sum_floor" in data:
             data["floor_area"] = data["sum_floor"]
+
+        if "_floor_elevations" in data:
+            elevations = data["_floor_elevations"]
+            if len(elevations) > 0:
+                data["story_count"] = len(elevations)
+            del data["_floor_elevations"]
 
         # Cleanup temporary keys
         if "sum_floor" in data:

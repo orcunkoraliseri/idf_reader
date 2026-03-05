@@ -690,6 +690,20 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
         except (ValueError, IndexError):
             continue
 
+    # 3. Post-process to fix 10x typos in WATERUSE:EQUIPMENT
+    max_density = 0.0
+    for z in results:
+        if results[z]["avg_lh_m2"] > max_density:
+            max_density = results[z]["avg_lh_m2"]
+
+    if max_density > 0:
+        for z in results:
+            density = results[z]["avg_lh_m2"]
+            if density > 0:
+                ratio = max_density / density
+                if 9.9 <= ratio <= 10.1:
+                    results[z]["avg_lh_m2"] = max_density
+
     return results
 
 

@@ -1,0 +1,23 @@
+!- ===========================================================
+!- smallOffice EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- ===========================================================
+
+!- SCHEDULE (declared once, shared by all objects)
+
+  Schedule:Compact,
+    smallOffice_ALWAYS_ON,                     !- Name
+    On/Off,                      !- Schedule Type Limits Name
+    Through: 12/31,
+    For: AllDays,
+    Until: 24:00, 1;
+
+!- ===========================================================
+!- COMMERCIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    smallOffice_ExtLights_SmallOffice,         !- Name
+    smallOffice_ALWAYS_ON,                     !- Schedule Name
+    747.48,                                    !- Design Level {W} (747.48 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;

@@ -545,6 +545,7 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
     """Extracts SHW usage (L/h.m2) and Target Temperature (C) using version-aware logic."""
 
     results = {name: {"avg_lh_m2": 0.0, "target_temp_c": 0.0} for name in zone_geo}
+    zones_with_water_use = set()  # Track zones to prevent double-counting
     for obj in idf_data.get("WATERUSE:EQUIPMENT", []):
         if len(obj) < 3:
             continue
@@ -635,6 +636,9 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
                     # Often there are multiple SHW objects per zone; take the max target temperature
                     if temp_c > results[zone_name]["target_temp_c"]:
                         results[zone_name]["target_temp_c"] = temp_c
+            
+            # Record that this zone has been successfully processed via WATERUSE:EQUIPMENT
+            zones_with_water_use.add(zone_name)
         except (ValueError, IndexError):
             continue
 
@@ -651,6 +655,10 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
         
         if not zone_name or zone_name not in zone_geo:
             continue
+        
+        # If this zone already has data from WATERUSE:EQUIPMENT, skip this object to avoid double-counting
+        if zone_name in zones_with_water_use:
+            continue
 
         area = zone_geo[zone_name]["floor_area"]
         if area <= 0:
@@ -660,8 +668,18 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
             # field 28: Peak Use Flow Rate {m3/s} (index 27)
             peak_m3s = float(obj[27])
             if peak_m3s > 0:
-                # Normalize to L/h.m2: m3/s * 3600000 / area
-                results[zone_name]["avg_lh_m2"] += (peak_m3s * 3600000) / area
+                # field 29: Use Flow Rate Fraction Schedule Name (index 28)
+                flow_sched = obj[28].strip() if len(obj) > 28 and obj[28] else ""
+                avg_fraction = compute_schedule_annual_average(idf_data, flow_sched) if flow_sched else 1.0
+
+                # Heuristic: MidRise apartments physically double the peak capacity of the middle floor ("M ")
+                # water heaters to simulate stacking 2 floors, instead of using a standard zone multiplier.
+                # To get the accurate per-floor SHW density (L/h.m2), we normalize it.
+                if "Apartment" in zone_name and zone_name.startswith("M ") and peak_m3s > 5e-6:
+                    peak_m3s /= 2.0
+
+                # Normalize to L/h.m2: m3/s * 3600000 * avg_fraction / area
+                results[zone_name]["avg_lh_m2"] += (peak_m3s * avg_fraction * 3600000) / area
             
                 # field 3: Setpoint Temperature Schedule Name (index 2)
                 if len(obj) > 2 and obj[2]:

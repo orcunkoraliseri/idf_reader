@@ -1,0 +1,23 @@
+!- ===========================================================
+!- primarySchool EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- ===========================================================
+
+!- SCHEDULE (declared once, shared by all objects)
+
+  Schedule:Compact,
+    primarySchool_ALWAYS_ON,                   !- Name
+    On/Off,                      !- Schedule Type Limits Name
+    Through: 12/31,
+    For: AllDays,
+    Until: 24:00, 1;
+
+!- ===========================================================
+!- COMMERCIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    primarySchool_ExtLights_SchoolPrimary,     !- Name
+    primarySchool_ALWAYS_ON,                   !- Schedule Name
+    1961.02,                                   !- Design Level {W} (1961.02 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;

@@ -900,16 +900,25 @@ def extract_ventilation(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, f
             continue
             
         name = obj[0].upper()
-        # Robust Heuristic: Clean names for matching (remove spaces, underscores, and SZ DSOA)
-        search_name = name.replace("_", "").replace(" ", "").replace("SZDSOA", "")
         
+        # 1. Attempt exact match after stripping common prefixes
+        stripped_name = name.replace("SZ DSOA ", "").replace("SZ DSOA", "").strip()
         matched_zone = None
-        best_len = 0
+        
         for zn in zone_geo:
-            clean_zn = zn.upper().replace("_", "").replace(" ", "")
-            if (clean_zn in search_name or search_name in clean_zn) and len(zn) > best_len:
+            if zn.upper() == stripped_name:
                 matched_zone = zn
-                best_len = len(zn)
+                break
+                
+        # 2. Fallback to robust substring matching
+        if not matched_zone:
+            search_name = name.replace("_", "").replace(" ", "").replace("SZDSOA", "")
+            best_len = 0
+            for zn in zone_geo:
+                clean_zn = zn.upper().replace("_", "").replace(" ", "")
+                if (clean_zn in search_name or search_name in clean_zn) and len(zn) > best_len:
+                    matched_zone = zn
+                    best_len = len(zn)
 
         if not matched_zone:
             continue

@@ -20,8 +20,9 @@ def extract_baseline_constructions(file_path: str) -> list[dict[str, Any]]:
     """
     idf_data = parse_idf(file_path)
 
-    # 1. Build Material Registry (R-value mapping)
+    # 1. Build Material Registries (R-value and thickness mappings)
     materials_r: dict[str, float] = {}
+    materials_thickness: dict[str, float] = {}
 
     # Opaque Materials
     for fields in idf_data.get("MATERIAL", []):
@@ -29,11 +30,22 @@ def extract_baseline_constructions(file_path: str) -> list[dict[str, Any]]:
         thickness = float(fields[2])
         conductivity = float(fields[3])
         materials_r[name] = thickness / conductivity
+        materials_thickness[name] = thickness  # physical thickness in metres
 
     for fields in idf_data.get("MATERIAL:NOMASS", []):
         name = fields[0]
         resistance = float(fields[2])
         materials_r[name] = resistance
+        materials_thickness[name] = 0.0  # no physical dimension
+
+    # Window Materials
+    for fields in idf_data.get("WINDOWMATERIAL:GLAZING", []):
+        name = fields[0]
+        materials_thickness[name] = float(fields[3])  # Thickness {m}
+
+    for fields in idf_data.get("WINDOWMATERIAL:GAS", []):
+        name = fields[0]
+        materials_thickness[name] = float(fields[2])  # Thickness {m}
 
     # 2. Define target constructions and labels
     targets = [
@@ -78,19 +90,23 @@ def extract_baseline_constructions(file_path: str) -> list[dict[str, Any]]:
                 break
         
         if found:
+            layer_thicknesses = []
             for layer in layers:
                 r_sum += materials_r.get(layer, 0.0)
-            
+                layer_thicknesses.append(materials_thickness.get(layer, 0.0))
+
             # Use calculated R-value if not hardcoded (like window)
             metric_val = target["metric_value"]
             if metric_val is None:
                 metric_val = r_sum
-                
+
             results.append({
                 "label": target["label"],
                 "metric_label": target["metric_label"],
                 "metric_value": metric_val,
-                "layers": layers
+                "layers": layers,
+                "layer_thicknesses": layer_thicknesses,
+                "total_thickness": sum(layer_thicknesses),
             })
 
     return results

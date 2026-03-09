@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(py:*)",
+      "Bash(echo 25\nq:*)",
+      "Bash(C:\\\\Users\\\\o_iseri\\\\Desktop\\\\idf_reader\\\\.venv\\\\Scripts\\\\pip.exe list:*)",
+      "Bash(\"/c/Users/o_iseri/Desktop/idf_reader/.venv/Scripts/pip.exe\" list:*)",
+      "Bash(\"/c/Users/o_iseri/Desktop/idf_reader/.venv/Scripts/python.exe\":*)",
+      "Bash(\"/c/Users/o_iseri/Desktop/idf_reader/.venv/Scripts/pip.exe\" install:*)",
+      "Bash(\"/c/Users/o_iseri/Desktop/idf_reader/.venv/Scripts/pip3.exe\" install:*)"
+    ]
+  }
+}

@@ -126,6 +126,16 @@ def _build_construction_html(construction_data: list[dict]) -> str:
             f'<td style="background:var(--card-bg); color:var(--text); border: 1px solid var(--border);">{val}</td>'
         )
 
+    # 2b. Thickness Row (total construction thickness in cm)
+    thickness_cells = ""
+    for c in construction_data:
+        total_cm = c.get("total_thickness", 0.0) * 100
+        thickness_val = f"{round(total_cm, 1)} cm" if total_cm > 0 else "—"
+        thickness_cells += (
+            f'<td style="font-weight:600; background:#2d3a4f; color:var(--accent); border: 1px solid var(--border);">Thickness (cm)</td>'
+            f'<td style="background:var(--card-bg); color:var(--text); border: 1px solid var(--border);">{thickness_val}</td>'
+        )
+
     # 3. Layer Rows
     layer_rows_html = ""
     for i in range(max_layers):
@@ -133,7 +143,12 @@ def _build_construction_html(construction_data: list[dict]) -> str:
         for c in construction_data:
             label = "Layers (outside to inside)" if i == 0 else ""
             layer_name = c["layers"][i] if i < len(c["layers"]) else ""
-            # Label side (left col of each pair)
+            # Annotate layer with its thickness if available and non-zero
+            if layer_name:
+                thicknesses = c.get("layer_thicknesses", [])
+                t = thicknesses[i] if i < len(thicknesses) else 0.0
+                if t > 0:
+                    layer_name = f"{layer_name} · {round(t * 100, 1)} cm"
             label_bg = "#2d3a4f" if label else "transparent"
             cells += (
                 f'<td style="background:{label_bg}; color:var(--text-dim); border: 1px solid var(--border); font-size:0.75rem;">{label}</td>'
@@ -155,6 +170,7 @@ def _build_construction_html(construction_data: list[dict]) -> str:
                 </thead>
                 <tbody>
                     <tr>{metric_cells}</tr>
+                    <tr>{thickness_cells}</tr>
                     {layer_rows_html}
                 </tbody>
             </table>

@@ -618,6 +618,14 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
         if area <= 0:
             continue
 
+        # For multi-story residential zones (e.g. detached house), normalize SHW
+        # by footprint area rather than total floor area. DHW demand is per
+        # dwelling-unit, not per floor — the same fixtures serve the whole unit
+        # regardless of how many stories it spans.
+        story_count = zone_geo[zone_name].get("story_count", 1)
+        if story_count > 1:
+            area = area / story_count
+
         try:
             # field 3: Peak Flow Rate {m3/s} (index 2)
             peak_m3s = float(obj[2])

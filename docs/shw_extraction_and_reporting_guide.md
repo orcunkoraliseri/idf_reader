@@ -22,6 +22,8 @@ The **peak** is a design instantaneous maximum—representing the upper bound of
 ASHRAE Handbook (HVAC Applications, Ch. 51), DOE Prototype Buildings, ENERGY STAR, and CBECS all utilize average daily or hourly consumption for building characterization rather than raw sizing peaks. Therefore, our extractor algorithm strictly calculates:
 **Area-Normalized SHW [L/h.m²] = `(Peak_m3/s × Average_Fraction × 3,600,000) / Zone_Area`**
 
+For multi-story residential zones (e.g. detached houses), `Zone_Area` is the **footprint area** (total floor area ÷ story count) rather than the sum of all floor surfaces. See Section 3 for details.
+
 ---
 
 ## 2. IDF Extraction Logic & Supported Objects
@@ -59,6 +61,21 @@ You may observe differing Target Temperatures between identical zone types (e.g.
 *   HighRise's `WaterUse:Equipment` utilizes the `SHW TARGET TEMP SCHED`, which is explicitly set to `43.3 °C` (`110 °F`), representing **fixture-level use limits**.
 *   MidRise's `WaterHeater:Mixed` utilizes the `Hot Water Setpoint Temp Schedule`, which is explicitly set to `60.0 °C` (`140 °F`), representing **tank-level storage rules**.
 
+### Detached House (Single-Family Residential) — Multi-Fixture Aggregation and Footprint Normalization
+
+DOE single-family residential prototypes (e.g. `US+SF+*`) model SHW demand using **five separate `WaterUse:Equipment` objects** per living zone: Showers, Baths, Sinks, Clothes Washer, and Dishwasher. Each fixture carries a very large peak flow rate paired with a correspondingly tiny Building America (BA) schedule fraction so that `peak × fraction` equals realistic hourly demand.
+
+The extractor sums all five fixture contributions into a single aggregated `avg_lh_m2` value for the zone (via `+=` at line 630 of `extractors.py`). The HTML therefore reports **one SHW value** per zone, not five separate rows — identical in presentation to the MidRise apartment output.
+
+**Area normalization — the footprint fix:**
+The `living_unit1` zone of a two-storey detached house spans both floors, so `geometry.py` computes its `floor_area` as the sum of all floor surfaces (footprint × 2). Dividing by this total area halves the apparent SHW density, because DHW demand is per dwelling-unit, not per floor — the same fixtures serve the whole unit regardless of how many storeys it has.
+
+*   **Fix:** For zones with `story_count > 1`, `extract_water_use()` divides `floor_area` by `story_count` before normalising, yielding the footprint area as the denominator.
+*   **Effect:** A two-storey single-family house changes from `0.0291 L/h.m²` (incorrect, total area) to `0.0582 L/h.m²` (correct, footprint area).
+
+**Schedules — no replacement needed:**
+The five BA fixture schedules are already calibrated to produce realistic aggregate demand (~150 L/day for a 3-bed/3-bath home, consistent with Building America benchmarks). They do not need to be replaced with the MidRise `APT_DHW_SCH`. The MidRise schedule has a high average fraction (~0.52) because it was designed for a small per-zone peak (~3.3e-6 m³/s); applying it to the large residential fixture peaks would give absurdly inflated results.
+
 ### Unorthodox Floor Sizing Techniques
-Some Department of Energy prototypes employ unconventional modeling to bypass Zone Multipliers. For example, in the MidRise apartment block, the ground floor (`G N1`) unit will correctly extract `0.069 L/h.m²`. However, the middle floor (`M N1`) above it will extract exactly double (`0.139 L/h.m²`). 
+Some Department of Energy prototypes employ unconventional modeling to bypass Zone Multipliers. For example, in the MidRise apartment block, the ground floor (`G N1`) unit will correctly extract `0.069 L/h.m²`. However, the middle floor (`M N1`) above it will extract exactly double (`0.139 L/h.m²`).
 *   **Reason:** The internal `WaterHeater:Mixed` peak flow capacity was literally hard-coded to double the capacity (`6.529e-06 m³/s` vs `3.264e-06 m³/s`) on the middle floor to simulate multiple units stacked together without increasing the physical simulated zone size. The code correctly extracts what is drawn in the IDF.

@@ -1,0 +1,23 @@
+!- ===========================================================
+!- officeMedium EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- ===========================================================
+
+!- SCHEDULE (declared once, shared by all objects)
+
+  Schedule:Compact,
+    officeMedium_ALWAYS_ON,                    !- Name
+    On/Off,                      !- Schedule Type Limits Name
+    Through: 12/31,
+    For: AllDays,
+    Until: 24:00, 1;
+
+!- ===========================================================
+!- COMMERCIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    officeMedium_ExtLights_MediumOffice,       !- Name
+    officeMedium_ALWAYS_ON,                    !- Schedule Name
+    3824.74,                                   !- Design Level {W} (3824.74 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;

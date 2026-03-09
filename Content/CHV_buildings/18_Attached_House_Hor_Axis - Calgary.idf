@@ -6199,7 +6199,7 @@ ZoneInfiltration:DesignFlowRate,
 
 ZoneInfiltration:DesignFlowRate,
     18_4_ATTIC ZONE Infil 1, !- Name
-    18_4_living_unit1,       !- Zone or ZoneList Name
+    18_4_attic_unit1,        !- Zone or ZoneList Name
     18_INF-SCHED,            !- Schedule Name
     AirChanges/Hour,         !- Design Flow Rate Calculation Method
     ,                        !- Design Flow Rate {m3/s}
@@ -6241,7 +6241,7 @@ ZoneInfiltration:DesignFlowRate,
 
 ZoneInfiltration:DesignFlowRate,
     18_3_ATTIC ZONE Infil 1, !- Name
-    18_3_living_unit1,       !- Zone or ZoneList Name
+    18_3_attic_unit1,        !- Zone or ZoneList Name
     18_INF-SCHED,            !- Schedule Name
     AirChanges/Hour,         !- Design Flow Rate Calculation Method
     ,                        !- Design Flow Rate {m3/s}
@@ -6283,7 +6283,7 @@ ZoneInfiltration:DesignFlowRate,
 
 ZoneInfiltration:DesignFlowRate,
     18_2_ATTIC ZONE Infil 1, !- Name
-    18_2_living_unit1,       !- Zone or ZoneList Name
+    18_2_attic_unit1,        !- Zone or ZoneList Name
     18_INF-SCHED,            !- Schedule Name
     AirChanges/Hour,         !- Design Flow Rate Calculation Method
     ,                        !- Design Flow Rate {m3/s}
@@ -6325,7 +6325,7 @@ ZoneInfiltration:DesignFlowRate,
 
 ZoneInfiltration:DesignFlowRate,
     18_1_ATTIC ZONE Infil 1, !- Name
-    18_1_living_unit1,       !- Zone or ZoneList Name
+    18_1_attic_unit1,        !- Zone or ZoneList Name
     18_INF-SCHED,            !- Schedule Name
     AirChanges/Hour,         !- Design Flow Rate Calculation Method
     ,                        !- Design Flow Rate {m3/s}

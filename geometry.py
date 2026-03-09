@@ -114,12 +114,28 @@ def get_zone_geometry(
                 face_area_vec += np.cross(v1, v2)
             
             surf_area = 0.5 * np.linalg.norm(face_area_vec)
-            
+
             # Volume Calculation (Signed pyramid volume from origin to face)
             # Vol = (1/6) * sum( dot(v_i, v_next x v_next_next) ) is for specific triangle meshes.
             # For general polygon: Vol = (1/3) * dot(any_vertex, face_area_vector_sum_half)
             # Note: face_area_vec is 2x the actual vector area
-            zone_geo[zone_name]["volume"] += (1.0/6.0) * np.dot(v_arr[0], face_area_vec)
+            #
+            # Adiabatic surfaces (e.g. mid-story construction floors) are internal to the
+            # zone and must NOT contribute to the divergence-theorem volume, otherwise
+            # they skew the result (e.g. the inter-storey adiabatic floor of a 2-story
+            # living zone subtracts ~101 m³ from the correct volume).
+            pyramid_vol = (1.0/6.0) * np.dot(v_arr[0], face_area_vec)
+            if boundary != "adiabatic":
+                zone_geo[zone_name]["volume"] += pyramid_vol
+
+            # Zone-boundary surfaces are only defined in ONE of the two adjacent zones.
+            # The missing "mirror" surface in the adjacent zone must be added with the
+            # opposite sign so the divergence-theorem volume closes correctly for both
+            # zones (e.g. the living-zone ceiling acts as the attic-zone floor).
+            if boundary == "zone":
+                adj_zone = surf[bc_idx + 1].strip() if len(surf) > bc_idx + 1 else ""
+                if adj_zone in zone_geo:
+                    zone_geo[adj_zone]["volume"] -= pyramid_vol
 
             if surf_type == "floor":
                 if "sum_floor" not in zone_geo[zone_name]:

@@ -3707,7 +3707,7 @@ AirChanges/Hour,         !- Design Flow Rate Calculation Method
 
 ZoneInfiltration:DesignFlowRate,
 17_19_ATTIC ZONE Infil 1,      !- Name
-17_19_living_unit1,            !- Zone or ZoneList Name
+17_19_attic_unit1,             !- Zone or ZoneList Name
 17_INF-SCHED,               !- Schedule Name
 AirChanges/Hour,         !- Design Flow Rate Calculation Method
 ,                        !- Design Flow Rate {m3/s}

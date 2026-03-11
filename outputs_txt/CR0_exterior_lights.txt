@@ -1,0 +1,66 @@
+!- ===========================================================
+!- CR0 EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- ===========================================================
+
+!- SCHEDULE (declared once, shared by all objects)
+
+  Schedule:Compact,
+    CR0_ALWAYS_ON,                             !- Name
+    On/Off,                      !- Schedule Type Limits Name
+    Through: 12/31,
+    For: AllDays,
+    Until: 24:00, 1;
+
+!- ===========================================================
+!- RESIDENTIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    CR0_ExtLights_DetachedHouse,               !- Name
+    CR0_ALWAYS_ON,                             !- Schedule Name
+    568.09,                                    !- Design Level {W} (12 x 47.34 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+  Exterior:Lights,
+    CR0_ExtLights_AttachedHouse,               !- Name
+    CR0_ALWAYS_ON,                             !- Schedule Name
+    1325.55,                                   !- Design Level {W} (28 x 47.34 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+!- ===========================================================
+!- COMMERCIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    CR0_ExtLights_SmallOffice,                 !- Name
+    CR0_ALWAYS_ON,                             !- Schedule Name
+    747.48,                                    !- Design Level {W} (747.48 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+  Exterior:Lights,
+    CR0_ExtLights_SmallRetail,                 !- Name
+    CR0_ALWAYS_ON,                             !- Schedule Name
+    130.22,                                    !- Design Level {W} (130.22 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+!- ===========================================================
+!- RESTAURANT
+!- ===========================================================
+
+  Exterior:Lights,
+    CR0_ExtLights_QSR,                         !- Name
+    CR0_ALWAYS_ON,                             !- Schedule Name
+    952.15,                                    !- Design Level {W} (952.15 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+  Exterior:Lights,
+    CR0_ExtLights_FSR,                         !- Name
+    CR0_ALWAYS_ON,                             !- Schedule Name
+    1510.48,                                   !- Design Level {W} (1510.48 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;

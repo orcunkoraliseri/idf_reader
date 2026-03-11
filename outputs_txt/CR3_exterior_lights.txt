@@ -1,11 +1,11 @@
 !- ===========================================================
-!- CR3_IAL EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- CR3 EXTERIOR LIGHTS - ADDITIONAL IDF STRING
 !- ===========================================================
 
 !- SCHEDULE (declared once, shared by all objects)
 
   Schedule:Compact,
-    CR3_IAL_ALWAYS_ON,                         !- Name
+    CR3_ALWAYS_ON,                             !- Name
     On/Off,                      !- Schedule Type Limits Name
     Through: 12/31,
     For: AllDays,
@@ -16,8 +16,8 @@
 !- ===========================================================
 
   Exterior:Lights,
-    CR3_IAL_ExtLights_AttachedHouse,           !- Name
-    CR3_IAL_ALWAYS_ON,                         !- Schedule Name
+    CR3_ExtLights_AttachedHouse,               !- Name
+    CR3_ALWAYS_ON,                             !- Schedule Name
     1325.55,                                   !- Design Level {W} (28 x 47.34 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;
@@ -27,15 +27,26 @@
 !- ===========================================================
 
   Exterior:Lights,
-    CR3_IAL_ExtLights_SmallRetail,             !- Name
-    CR3_IAL_ALWAYS_ON,                         !- Schedule Name
-    130.22,                                    !- Design Level {W} (130.22 W)
+    CR3_ExtLights_SchoolPrimary,               !- Name
+    CR3_ALWAYS_ON,                             !- Schedule Name
+    1961.02,                                   !- Design Level {W} (1961.02 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;
 
   Exterior:Lights,
-    CR3_IAL_ExtLights_SchoolPrimary,           !- Name
-    CR3_IAL_ALWAYS_ON,                         !- Schedule Name
-    1961.02,                                   !- Design Level {W} (1961.02 W)
+    CR3_ExtLights_SmallRetail,                 !- Name
+    CR3_ALWAYS_ON,                             !- Schedule Name
+    130.22,                                    !- Design Level {W} (130.22 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+!- ===========================================================
+!- RESTAURANT
+!- ===========================================================
+
+  Exterior:Lights,
+    CR3_ExtLights_QSR,                         !- Name
+    CR3_ALWAYS_ON,                             !- Schedule Name
+    952.15,                                    !- Design Level {W} (952.15 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;

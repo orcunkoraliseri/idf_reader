@@ -1,11 +1,11 @@
 !- ===========================================================
-!- CR2_IAL EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- CR2 EXTERIOR LIGHTS - ADDITIONAL IDF STRING
 !- ===========================================================
 
 !- SCHEDULE (declared once, shared by all objects)
 
   Schedule:Compact,
-    CR2_IAL_ALWAYS_ON,                         !- Name
+    CR2_ALWAYS_ON,                             !- Name
     On/Off,                      !- Schedule Type Limits Name
     Through: 12/31,
     For: AllDays,
@@ -16,8 +16,8 @@
 !- ===========================================================
 
   Exterior:Lights,
-    CR2_IAL_ExtLights_ApartmentMidRise,        !- Name
-    CR2_IAL_ALWAYS_ON,                         !- Schedule Name
+    CR2_ExtLights_ApartmentMidRise,            !- Name
+    CR2_ALWAYS_ON,                             !- Schedule Name
     7258.3,                                    !- Design Level {W} (5 x 1451.66 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;
@@ -27,30 +27,23 @@
 !- ===========================================================
 
   Exterior:Lights,
-    CR2_IAL_ExtLights_SchoolSecondary,         !- Name
-    CR2_IAL_ALWAYS_ON,                         !- Schedule Name
+    CR2_ExtLights_SchoolSecondary,             !- Name
+    CR2_ALWAYS_ON,                             !- Schedule Name
     4664.84,                                   !- Design Level {W} (4664.84 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;
 
   Exterior:Lights,
-    CR2_IAL_ExtLights_SmallOffice,             !- Name
-    CR2_IAL_ALWAYS_ON,                         !- Schedule Name
-    747.48,                                    !- Design Level {W} (747.48 W)
-    AstronomicalClock,                         !- Control Option
-    Exterior-Lights;
-
-  Exterior:Lights,
-    CR2_IAL_ExtLights_MediumOffice,            !- Name
-    CR2_IAL_ALWAYS_ON,                         !- Schedule Name
+    CR2_ExtLights_MediumOffice,                !- Name
+    CR2_ALWAYS_ON,                             !- Schedule Name
     3824.74,                                   !- Design Level {W} (3824.74 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;
 
   Exterior:Lights,
-    CR2_IAL_ExtLights_SmallRetail,             !- Name
-    CR2_IAL_ALWAYS_ON,                         !- Schedule Name
-    130.22,                                    !- Design Level {W} (130.22 W)
+    CR2_ExtLights_SmallOffice,                 !- Name
+    CR2_ALWAYS_ON,                             !- Schedule Name
+    747.48,                                    !- Design Level {W} (747.48 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;
 
@@ -59,15 +52,15 @@
 !- ===========================================================
 
   Exterior:Lights,
-    CR2_IAL_ExtLights_QSR,                     !- Name
-    CR2_IAL_ALWAYS_ON,                         !- Schedule Name
+    CR2_ExtLights_QSR,                         !- Name
+    CR2_ALWAYS_ON,                             !- Schedule Name
     952.15,                                    !- Design Level {W} (952.15 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;
 
   Exterior:Lights,
-    CR2_IAL_ExtLights_FSR,                     !- Name
-    CR2_IAL_ALWAYS_ON,                         !- Schedule Name
+    CR2_ExtLights_FSR,                         !- Name
+    CR2_ALWAYS_ON,                             !- Schedule Name
     1510.48,                                   !- Design Level {W} (1510.48 W)
     AstronomicalClock,                         !- Control Option
     Exterior-Lights;

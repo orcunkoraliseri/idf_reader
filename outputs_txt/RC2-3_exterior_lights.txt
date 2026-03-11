@@ -1,0 +1,30 @@
+!- ===========================================================
+!- RC2-3 EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- ===========================================================
+
+!- SCHEDULE (declared once, shared by all objects)
+
+  Schedule:Compact,
+    RC2-3_ALWAYS_ON,                           !- Name
+    On/Off,                      !- Schedule Type Limits Name
+    Through: 12/31,
+    For: AllDays,
+    Until: 24:00, 1;
+
+!- ===========================================================
+!- RESIDENTIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    RC2-3_ExtLights_DetachedHouse,             !- Name
+    RC2-3_ALWAYS_ON,                           !- Schedule Name
+    1136.19,                                   !- Design Level {W} (24 x 47.34 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;
+
+  Exterior:Lights,
+    RC2-3_ExtLights_AttachedHouse,             !- Name
+    RC2-3_ALWAYS_ON,                           !- Schedule Name
+    1325.55,                                   !- Design Level {W} (28 x 47.34 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;

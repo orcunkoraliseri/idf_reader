@@ -1,0 +1,23 @@
+!- ===========================================================
+!- RC6 EXTERIOR LIGHTS - ADDITIONAL IDF STRING
+!- ===========================================================
+
+!- SCHEDULE (declared once, shared by all objects)
+
+  Schedule:Compact,
+    RC6_ALWAYS_ON,                             !- Name
+    On/Off,                      !- Schedule Type Limits Name
+    Through: 12/31,
+    For: AllDays,
+    Until: 24:00, 1;
+
+!- ===========================================================
+!- RESIDENTIAL
+!- ===========================================================
+
+  Exterior:Lights,
+    RC6_ExtLights_ApartmentHighRise,           !- Name
+    RC6_ALWAYS_ON,                             !- Schedule Name
+    24227.92,                                  !- Design Level {W} (4 x 6056.98 W)
+    AstronomicalClock,                         !- Control Option
+    Exterior-Lights;

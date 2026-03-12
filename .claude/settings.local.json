@@ -13,7 +13,8 @@
       "Bash(ls:*)",
       "Bash(do:*)",
       "Bash(mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/BEM_utils && mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/0_BEM_Setup/Buildings && mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/0_BEM_Setup/WeatherFile && mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/0_BEM_Setup/SimResults && echo \"Directories created\")",
-      "Bash(grep -l \"EnclosureAveraged\" /Users/orcunkoraliseri/Desktop/idf_reader/Content/ASHRAE901_STD2022/*.idf | wc -l && echo \"IDF files already corrupted in ASHRAE901_STD2022\")"
+      "Bash(grep -l \"EnclosureAveraged\" /Users/orcunkoraliseri/Desktop/idf_reader/Content/ASHRAE901_STD2022/*.idf | wc -l && echo \"IDF files already corrupted in ASHRAE901_STD2022\")",
+      "Bash(grep -rn \"SHW\\\\|shw\\\\|water_use\\\\|WaterUse\\\\|hot_water\\\\|flow_rate\" /Users/orcunkoraliseri/Desktop/idf_reader/*.py --include=\"*.py\" -l)"
     ]
   }
 }

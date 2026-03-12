@@ -632,10 +632,19 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
 
             # field 4: Flow Rate Fraction Schedule Name (index 3)
             flow_sched = obj[3].strip() if len(obj) > 3 and obj[3] else ""
-            avg_fraction = compute_schedule_annual_average(idf_data, flow_sched) if flow_sched else 1.0
 
-            # Normalize annual-average flow to L/h.m2
-            results[zone_name]["avg_lh_m2"] += (peak_m3s * avg_fraction * 3600000) / area
+            # Special case: AlwaysOff means the fixture is explicitly disabled in this
+            # zone (e.g. ASHRAE prototype Hotel rooms that share SHW via another zone).
+            # Treat as zero — consistent with original behaviour and the Hotel Small doc.
+            if flow_sched.lower() == "alwaysoff":
+                continue
+
+            # For non-residential (WaterUse:Equipment) report PEAK design intensity.
+            # The schedule controls *when* hot water is drawn — it is a temporal pattern,
+            # not a sizing parameter. Peak flow rate is what ASHRAE 90.1 defines as the
+            # SHW design value. Multiplying by avg_fraction converts to annual-average
+            # consumption, which is schedule-dependent and ~10× lower for offices.
+            results[zone_name]["avg_lh_m2"] += (peak_m3s * 3600000) / area
 
             # field 5: Target Temperature Schedule Name (index 4)
             if len(obj) > 4 and obj[4]:
@@ -686,7 +695,9 @@ def extract_water_use(idf_data: dict, zone_geo: dict) -> dict[str, dict[str, flo
                 if "Apartment" in zone_name and zone_name.startswith("M ") and peak_m3s > 5e-6:
                     peak_m3s /= 2.0
 
-                # Normalize to L/h.m2: m3/s * 3600000 * avg_fraction / area
+                # Residential (WaterHeater:Mixed): keep avg_fraction — the tank peak capacity
+                # is a physical limit, not a design-intensity target. The schedule fraction
+                # reflects actual occupant draw patterns and is meaningful for residential.
                 results[zone_name]["avg_lh_m2"] += (peak_m3s * avg_fraction * 3600000) / area
             
                 # field 3: Setpoint Temperature Schedule Name (index 2)

@@ -1,0 +1,32 @@
+{
+    "eui": 181.405,
+    "total_floor_area": 4982.19,
+    "conditioned_floor_area": 4982.19,
+    "total_energy": 903795.531,
+    "end_uses": {
+        "Heating": 494845.012,
+        "Cooling": 35819.473,
+        "LightsWired": 61288.688,
+        "Exterior Lighting": 9558.341,
+        "MiscPlug": 196901.849,
+        "ElevatorLift": 23243.981,
+        "ElevatorLightsFan": 222.66,
+        "Transformer": 4041.01,
+        "Fans": 28148.574,
+        "Pumps": 48.517,
+        "Water Heater": 49677.426
+    },
+    "end_uses_normalized": {
+        "Heating": 99.323,
+        "Cooling": 7.19,
+        "LightsWired": 12.302,
+        "Exterior Lighting": 1.919,
+        "MiscPlug": 39.521,
+        "ElevatorLift": 4.665,
+        "ElevatorLightsFan": 0.045,
+        "Transformer": 0.811,
+        "Fans": 5.65,
+        "Pumps": 0.01,
+        "Water Heater": 9.971
+    }
+}

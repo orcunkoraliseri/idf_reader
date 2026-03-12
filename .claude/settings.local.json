@@ -11,7 +11,9 @@
       "Bash(\"/c/Users/o_iseri/Desktop/idf_reader/.venv/Scripts/pip.exe\" install:*)",
       "Bash(\"/c/Users/o_iseri/Desktop/idf_reader/.venv/Scripts/pip3.exe\" install:*)",
       "Bash(ls:*)",
-      "Bash(do:*)"
+      "Bash(do:*)",
+      "Bash(mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/BEM_utils && mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/0_BEM_Setup/Buildings && mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/0_BEM_Setup/WeatherFile && mkdir -p /Users/orcunkoraliseri/Desktop/idf_reader/0_BEM_Setup/SimResults && echo \"Directories created\")",
+      "Bash(grep -l \"EnclosureAveraged\" /Users/orcunkoraliseri/Desktop/idf_reader/Content/ASHRAE901_STD2022/*.idf | wc -l && echo \"IDF files already corrupted in ASHRAE901_STD2022\")"
     ]
   }
 }
